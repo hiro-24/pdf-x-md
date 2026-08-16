@@ -134,9 +134,12 @@ export default function PdfPage({
     }
 
     run().catch((error: unknown) => {
-      // Both are normal teardown: the page scrolled away, or the document closed.
+      // All normal teardown: the page scrolled away, or the document was closed
+      // while pages further down were still being drawn.
       const name = error instanceof Error ? error.name : ''
+      const message = error instanceof Error ? error.message : ''
       if (name === 'RenderingCancelledException' || name === 'AbortException') return
+      if (message === 'Transport destroyed') return
       console.error(`page ${pageNumber} failed to render`, error)
     })
 

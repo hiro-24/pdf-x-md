@@ -91,15 +91,22 @@ export default function App() {
   const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null)
   const [quoteTarget, setQuoteTarget] = useState<{ page: number; noteId: string; quote: { text: string; nonce: number } } | null>(null)
 
+  const [persisted, setPersisted] = useState<boolean | null>(null)
+  /** True while we are scrolling back to the remembered page on open. */
+  const [restoring, setRestoring] = useState(false)
+
   const pageSizes = useRef(new Map<number, Size>())
   const nonce = useRef(0)
   /** Pages currently crossing the middle of the window; the lowest one is "current". */
   const pagesInBand = useRef(new Set<number>())
+  /** Page to scroll to once the rows for a freshly opened document are laid out. */
+  const restoreTo = useRef<number | null>(null)
 
   const scale = fitMode === 'manual' ? ZOOM_STEPS[zoomIndex] : fitScale
 
   useEffect(() => {
     db.listDocs().then(setDocs).catch(console.error)
+    db.requestPersistence().then(setPersisted, () => setPersisted(false))
   }, [])
 
   /* ------------------------------------------------------------- fit width */
@@ -127,40 +134,48 @@ export default function App() {
 
   /* --------------------------------------------------------- open / close */
 
-  /** Measure page 1, reset per-document view state, and put the document on screen. */
-  const show = useCallback(async (doc: DocSummary, pdf: PDFDocument) => {
+  /** Load a document's annotations, reset per-document view state, show it. */
+  const present = useCallback(async (doc: DocSummary, pdf: PDFDocument) => {
+    const [loadedNotes, loadedHighlights] = await Promise.all([db.listNotes(doc.id), db.listHighlights(doc.id)])
+    setNotes(loadedNotes)
+    setHighlights(loadedHighlights)
+
     const first = await pdf.getPage(1)
-    pagesInBand.current.clear()
     const base = first.getViewport({ scale: 1 })
+    pagesInBand.current.clear()
     pageSizes.current = new Map()
-    setCurrentPage(1)
+
+    const startPage = Math.min(Math.max(doc.lastPage ?? 1, 1), pdf.numPages)
+    setCurrentPage(startPage)
+    restoreTo.current = startPage > 1 ? startPage : null
+    setRestoring(startPage > 1)
     setQuoteTarget(null)
     setActive({ doc, pdf, baseSize: { width: base.width, height: base.height } })
+
+    await db.touchDoc(doc.id)
+    setDocs(await db.listDocs())
   }, [])
 
-  const openDoc = useCallback(async (id: string) => {
-    setBusy('読み込み中…')
-    setError(null)
-    try {
-      const record = await db.getDoc(id)
-      if (!record) throw new Error('ファイルが見つかりませんでした')
-      const buffer = await record.blob.arrayBuffer()
-      const pdf = await loadPdf(buffer).promise
-
-      const [loadedNotes, loadedHighlights] = await Promise.all([db.listNotes(id), db.listHighlights(id)])
-      setNotes(loadedNotes)
-      setHighlights(loadedHighlights)
-      const { blob: _blob, ...summary } = record
-      await show({ ...summary, pageCount: pdf.numPages }, pdf)
-      await db.touchDoc(id)
-      setDocs(await db.listDocs())
-    } catch (cause) {
-      console.error(cause)
-      setError(cause instanceof Error ? cause.message : 'PDF を開けませんでした')
-    } finally {
-      setBusy(null)
-    }
-  }, [show])
+  const openDoc = useCallback(
+    async (id: string) => {
+      setBusy('読み込み中…')
+      setError(null)
+      try {
+        const record = await db.getDoc(id)
+        if (!record) throw new Error('ファイルが見つかりませんでした')
+        const buffer = await record.blob.arrayBuffer()
+        const pdf = await loadPdf(buffer).promise
+        const { blob: _blob, ...summary } = record
+        await present({ ...summary, pageCount: pdf.numPages }, pdf)
+      } catch (cause) {
+        console.error(cause)
+        setError(cause instanceof Error ? cause.message : 'PDF を開けませんでした')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [present],
+  )
 
   const openFile = useCallback(
     async (file: File) => {
@@ -171,19 +186,36 @@ export default function App() {
         // Parse once and keep the result: re-opening the same bytes in a second
         // worker costs seconds on a large PDF for no benefit.
         const pdf = await loadPdf(buffer).promise
-        const doc = {
+        const fingerprint = pdf.fingerprints[0] ?? null
+
+        // Dropping in a file that is already in the library reopens it. Making a
+        // second entry instead would strand every note taken on the first one.
+        const existing = await db.matchDoc(fingerprint, file.name, file.size)
+        if (existing) {
+          const renamed = existing.name !== file.name || existing.size !== file.size
+          if (renamed || !existing.fingerprint) {
+            await db.updateDoc(existing.id, {
+              fingerprint,
+              // Re-dropping a changed file means "use this version from now on".
+              ...(renamed ? { name: file.name, size: file.size, blob: file } : {}),
+            })
+          }
+          await present({ ...existing, name: file.name, size: file.size, fingerprint, pageCount: pdf.numPages }, pdf)
+          return
+        }
+
+        const doc: DocSummary = {
           id: uid(),
           name: file.name,
           size: file.size,
           pageCount: pdf.numPages,
           addedAt: Date.now(),
           lastOpenedAt: Date.now(),
+          fingerprint,
+          lastPage: 1,
         }
         await db.putDoc({ ...doc, blob: file })
-        setDocs(await db.listDocs())
-        setNotes([])
-        setHighlights([])
-        await show(doc, pdf)
+        await present(doc, pdf)
       } catch (cause) {
         console.error(cause)
         setError(cause instanceof Error ? cause.message : 'PDF を読み込めませんでした')
@@ -191,18 +223,81 @@ export default function App() {
         setBusy(null)
       }
     },
-    [show],
+    [present],
   )
 
   const closeDoc = useCallback(() => {
     setActive((current) => {
+      if (current) db.updateDoc(current.doc.id, { lastPage: currentPage }).catch(console.error)
       current?.pdf.loadingTask.destroy().catch(() => {})
       return null
     })
     setNotes([])
     setHighlights([])
     setQuoteTarget(null)
+  }, [currentPage])
+
+  /* -------------------------------------------------------- resume position */
+
+  /**
+   * Read the page indicator straight off the layout. IntersectionObserver is
+   * fine while the reader scrolls, but it samples during the frame that performs
+   * a programmatic jump, so its records describe where we were, not where we
+   * landed - and on an otherwise idle page nothing forces it to look again.
+   */
+  const syncCurrentPage = useCallback(() => {
+    const middle = window.innerHeight / 2
+    const band = pagesInBand.current
+    band.clear()
+    for (const row of document.querySelectorAll<HTMLElement>('.row')) {
+      const rect = row.getBoundingClientRect()
+      if (rect.bottom < middle || rect.top > middle) continue
+      band.add(Number(row.dataset.page))
+    }
+    if (band.size) setCurrentPage(Math.min(...band))
   }, [])
+
+  // Jump back to where the reader left off, once the rows exist to scroll to.
+  useEffect(() => {
+    const page = restoreTo.current
+    if (!active || page == null) return
+    // Two frames: the first commits the rows, the second lays them out. The
+    // target is only cleared once the scroll actually runs - clearing it up here
+    // would make StrictMode's discarded first pass eat the restore.
+    const frame = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        restoreTo.current = null
+        document.getElementById(`page-${page}`)?.scrollIntoView({ block: 'start' })
+        syncCurrentPage()
+        window.setTimeout(() => {
+          syncCurrentPage()
+          setRestoring(false)
+        }, 400)
+      }),
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [active, syncCurrentPage])
+
+  // Remember the page, but not the pages that flick past during the restore.
+  useEffect(() => {
+    if (!active || restoring) return
+    const timer = setTimeout(() => {
+      db.updateDoc(active.doc.id, { lastPage: currentPage }).catch(console.error)
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [active, currentPage, restoring])
+
+  // Closing the tab doesn't wait for the debounce above, so flush on the way out.
+  useEffect(() => {
+    if (!active) return
+    const flush = () => {
+      if (document.visibilityState === 'hidden') {
+        db.updateDoc(active.doc.id, { lastPage: currentPage }).catch(console.error)
+      }
+    }
+    document.addEventListener('visibilitychange', flush)
+    return () => document.removeEventListener('visibilitychange', flush)
+  }, [active, currentPage])
 
   const removeDoc = useCallback(
     async (id: string) => {
@@ -364,7 +459,15 @@ export default function App() {
 
   if (!active) {
     return (
-      <Library docs={docs} busy={busy} error={error} onOpenFile={openFile} onOpenDoc={openDoc} onDeleteDoc={removeDoc} />
+      <Library
+        docs={docs}
+        busy={busy}
+        error={error}
+        persisted={persisted}
+        onOpenFile={openFile}
+        onOpenDoc={openDoc}
+        onDeleteDoc={removeDoc}
+      />
     )
   }
 

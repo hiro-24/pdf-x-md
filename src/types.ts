@@ -8,6 +8,14 @@ export interface DocRecord {
   blob: Blob
   addedAt: number
   lastOpenedAt: number
+  /**
+   * pdf.js's own identity for the document (from the PDF's /ID). Lets us
+   * recognise the same file when it is dropped in again, even after a rename.
+   * Absent on records written before this was tracked.
+   */
+  fingerprint?: string | null
+  /** 1-based page the reader was last on, so reopening resumes there. */
+  lastPage?: number
 }
 
 /** Summary of a document, without the (potentially huge) blob. */

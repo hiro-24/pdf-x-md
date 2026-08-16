@@ -5,6 +5,8 @@ interface Props {
   docs: DocSummary[]
   busy: string | null
   error: string | null
+  /** Whether the browser promised not to evict this library; null until asked. */
+  persisted: boolean | null
   onOpenFile: (file: File) => void
   onOpenDoc: (id: string) => void
   onDeleteDoc: (id: string) => void
@@ -15,7 +17,7 @@ const formatSize = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const formatDate = (ms: number) =>
   new Date(ms).toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' })
 
-export default function Library({ docs, busy, error, onOpenFile, onOpenDoc, onDeleteDoc }: Props) {
+export default function Library({ docs, busy, error, persisted, onOpenFile, onOpenDoc, onDeleteDoc }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -97,6 +99,8 @@ export default function Library({ docs, busy, error, onOpenFile, onOpenDoc, onDe
 
         <p className="library__note">
           PDF もメモもこのブラウザの中（IndexedDB）にだけ保存されます。外部には一切送信しません。
+          {persisted === true && ' このデータは永続保存の対象になっています。'}
+          {persisted === false && ' 空き容量が不足すると、ブラウザの判断で削除される場合があります。'}
         </p>
       </div>
     </div>

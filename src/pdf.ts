@@ -1,8 +1,5 @@
 import * as pdfjs from 'pdfjs-dist'
-// NOT the .min build: in pdfjs-dist 6.2.108 the minified worker answers metadata
-// requests but never responds to `GetOperatorList`, so every page renders blank
-// forever. The unminified worker behaves correctly. Re-test before switching.
-import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 

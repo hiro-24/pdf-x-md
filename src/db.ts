@@ -42,6 +42,16 @@ function db() {
 
 const stripBlob = ({ blob: _blob, ...rest }: DocRecord): DocSummary => rest
 
+/**
+ * Ask the browser to treat this origin's storage as persistent. Without it the
+ * whole library is "best effort" data that can be evicted when the disk fills
+ * up. Chrome usually grants this silently once the site has been used a little.
+ */
+export async function requestPersistence(): Promise<boolean> {
+  if (!navigator.storage?.persist) return false
+  return (await navigator.storage.persisted()) || navigator.storage.persist()
+}
+
 /* ---------------------------------------------------------------- documents */
 
 export async function listDocs(): Promise<DocSummary[]> {
@@ -57,11 +67,39 @@ export async function putDoc(doc: DocRecord): Promise<void> {
   await (await db()).put('docs', doc)
 }
 
-export async function touchDoc(id: string): Promise<void> {
+export async function updateDoc(id: string, patch: Partial<Omit<DocRecord, 'id'>>): Promise<void> {
   const database = await db()
   const doc = await database.get('docs', id)
   if (!doc) return
-  await database.put('docs', { ...doc, lastOpenedAt: Date.now() })
+  await database.put('docs', { ...doc, ...patch })
+}
+
+export async function touchDoc(id: string): Promise<void> {
+  await updateDoc(id, { lastOpenedAt: Date.now() })
+}
+
+/**
+ * Find a previously imported copy of a file the user just dropped in, so their
+ * notes reattach instead of a second, empty entry appearing beside the first.
+ */
+export async function matchDoc(
+  fingerprint: string | null,
+  name: string,
+  size: number,
+): Promise<DocSummary | undefined> {
+  const all = await (await db()).getAll('docs')
+
+  // The PDF's own id survives renaming, so it is the better signal.
+  if (fingerprint) {
+    const match = all.find((doc) => doc.fingerprint === fingerprint)
+    if (match) return stripBlob(match)
+  }
+
+  // Fall back to name+size only for records stored before fingerprints existed.
+  // A record that has a fingerprint and didn't match is genuinely a different
+  // document, and silently pinning old notes to it would be worse than a copy.
+  const legacy = all.find((doc) => !doc.fingerprint && doc.name === name && doc.size === size)
+  return legacy ? stripBlob(legacy) : undefined
 }
 
 export async function deleteDoc(id: string): Promise<void> {
