@@ -4,7 +4,14 @@ import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
 import * as db from './db'
 import { download, toMarkdown } from './lib/markdown-export'
+import { adoptBundle, parseBundle, stampOf, toBundle } from './lib/bundle'
+import { findBundle, permissionState, pickFolder, requestAccess, vaultSupported, writeBundle } from './lib/vault'
 import type { DocSummary, Highlight, HighlightColor, Note, Rect } from './types'
+
+/** Where the sync folder handle lives between sessions. */
+const VAULT_KEY = 'vault-dir'
+
+type VaultStatus = 'unsupported' | 'off' | 'blocked' | 'ready'
 
 const uid = () => crypto.randomUUID()
 
@@ -92,6 +99,9 @@ export default function App() {
   const [quoteTarget, setQuoteTarget] = useState<{ page: number; noteId: string; quote: { text: string; nonce: number } } | null>(null)
 
   const [persisted, setPersisted] = useState<boolean | null>(null)
+  const [vaultDir, setVaultDir] = useState<FileSystemDirectoryHandle | null>(null)
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus>(vaultSupported ? 'off' : 'unsupported')
+  const [menuOpen, setMenuOpen] = useState(false)
   /** True while we are scrolling back to the remembered page on open. */
   const [restoring, setRestoring] = useState(false)
 
@@ -101,13 +111,31 @@ export default function App() {
   const pagesInBand = useRef(new Set<number>())
   /** Page to scroll to once the rows for a freshly opened document are laid out. */
   const restoreTo = useRef<number | null>(null)
+  /** Read by the folder writer, which must not re-run on every scroll. */
+  const currentPageRef = useRef(1)
+  const jsonInputRef = useRef<HTMLInputElement>(null)
 
   const scale = fitMode === 'manual' ? ZOOM_STEPS[zoomIndex] : fitScale
 
   useEffect(() => {
     db.listDocs().then(setDocs).catch(console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
+
+    if (!vaultSupported) return
+    db.getSetting<FileSystemDirectoryHandle>(VAULT_KEY)
+      .then(async (dir) => {
+        if (!dir) return
+        setVaultDir(dir)
+        // Chrome keeps the handle but often drops the grant between sessions;
+        // re-asking needs a click, so the UI shows a "reconnect" button.
+        setVaultStatus((await permissionState(dir)) === 'granted' ? 'ready' : 'blocked')
+      })
+      .catch(console.error)
   }, [])
+
+  useEffect(() => {
+    currentPageRef.current = currentPage
+  }, [currentPage])
 
   /* ------------------------------------------------------------- fit width */
 
@@ -135,8 +163,30 @@ export default function App() {
   /* --------------------------------------------------------- open / close */
 
   /** Load a document's annotations, reset per-document view state, show it. */
-  const present = useCallback(async (doc: DocSummary, pdf: PDFDocument) => {
-    const [loadedNotes, loadedHighlights] = await Promise.all([db.listNotes(doc.id), db.listHighlights(doc.id)])
+  const present = useCallback(
+    async (doc: DocSummary, pdf: PDFDocument) => {
+    let effective = doc
+    let [loadedNotes, loadedHighlights] = await Promise.all([db.listNotes(doc.id), db.listHighlights(doc.id)])
+
+    // The sync folder is the copy that outlives this browser profile. If it holds
+    // work newer than what IndexedDB has - another machine, or site data cleared
+    // and the PDF dropped back in - take the folder's version.
+    if (vaultDir && vaultStatus === 'ready') {
+      try {
+        const stored = await findBundle(vaultDir, doc.fingerprint ?? null, doc.name)
+        if (stored && stored.savedAt > stampOf(loadedNotes, loadedHighlights)) {
+          const adopted = adoptBundle(stored, doc.id)
+          loadedNotes = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
+          loadedHighlights = adopted.highlights
+          await db.replaceAnnotations(doc.id, loadedNotes, loadedHighlights)
+          effective = { ...doc, lastPage: stored.doc.lastPage || doc.lastPage }
+          await db.updateDoc(doc.id, { lastPage: effective.lastPage })
+        }
+      } catch (cause) {
+        console.error('同期フォルダから読み込めませんでした', cause)
+      }
+    }
+
     setNotes(loadedNotes)
     setHighlights(loadedHighlights)
 
@@ -145,16 +195,18 @@ export default function App() {
     pagesInBand.current.clear()
     pageSizes.current = new Map()
 
-    const startPage = Math.min(Math.max(doc.lastPage ?? 1, 1), pdf.numPages)
+    const startPage = Math.min(Math.max(effective.lastPage ?? 1, 1), pdf.numPages)
     setCurrentPage(startPage)
     restoreTo.current = startPage > 1 ? startPage : null
     setRestoring(startPage > 1)
     setQuoteTarget(null)
-    setActive({ doc, pdf, baseSize: { width: base.width, height: base.height } })
+    setActive({ doc: effective, pdf, baseSize: { width: base.width, height: base.height } })
 
     await db.touchDoc(doc.id)
     setDocs(await db.listDocs())
-  }, [])
+    },
+    [vaultDir, vaultStatus],
+  )
 
   const openDoc = useCallback(
     async (id: string) => {
@@ -236,6 +288,80 @@ export default function App() {
     setHighlights([])
     setQuoteTarget(null)
   }, [currentPage])
+
+  /* ------------------------------------------------------------ sync folder */
+
+  const connectVault = useCallback(async () => {
+    setError(null)
+    try {
+      const dir = await pickFolder()
+      if (!dir) return
+      await db.setSetting(VAULT_KEY, dir)
+      setVaultDir(dir)
+      setVaultStatus('ready')
+    } catch (cause) {
+      console.error(cause)
+      setError('フォルダを開けませんでした')
+    }
+  }, [])
+
+  const unlockVault = useCallback(async () => {
+    if (!vaultDir) return
+    setVaultStatus((await requestAccess(vaultDir)) ? 'ready' : 'blocked')
+  }, [vaultDir])
+
+  const disconnectVault = useCallback(async () => {
+    await db.deleteSetting(VAULT_KEY)
+    setVaultDir(null)
+    setVaultStatus('off')
+  }, [])
+
+  /**
+   * Mirror the open document into the folder. Deliberately not keyed on
+   * `currentPage`: every scroll pause would rewrite two files for no gain, so
+   * the page number rides along with whatever edit triggers the next write.
+   */
+  useEffect(() => {
+    if (!active || !vaultDir || vaultStatus !== 'ready') return
+    const timer = setTimeout(() => {
+      const doc = { ...active.doc, lastPage: currentPageRef.current }
+      writeBundle(vaultDir, toBundle(doc, notes, highlights), toMarkdown(doc, notes, highlights)).catch((cause) => {
+        console.error('同期フォルダに書けませんでした', cause)
+        setVaultStatus('blocked')
+      })
+    }, 1200)
+    return () => clearTimeout(timer)
+  }, [active, notes, highlights, vaultDir, vaultStatus])
+
+  /* ------------------------------------------------------ backup / restore */
+
+  const exportJson = useCallback(() => {
+    if (!active) return
+    const doc = { ...active.doc, lastPage: currentPageRef.current }
+    const name = `${doc.name.replace(/\.pdf$/i, '')}.notes.json`
+    download(name, JSON.stringify(toBundle(doc, notes, highlights), null, 2), 'application/json')
+  }, [active, notes, highlights])
+
+  const importJson = useCallback(
+    async (file: File) => {
+      if (!active) return
+      setError(null)
+      try {
+        const bundle = parseBundle(await file.text())
+        const count = bundle.notes.length + bundle.highlights.length
+        if (!confirm(`「${active.doc.name}」のメモとハイライトを、このファイルの内容（${count} 件）で置き換えます。よろしいですか？`)) return
+        const adopted = adoptBundle(bundle, active.doc.id)
+        const restored = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
+        await db.replaceAnnotations(active.doc.id, restored, adopted.highlights)
+        setNotes(restored)
+        setHighlights(adopted.highlights)
+      } catch (cause) {
+        console.error(cause)
+        setError(cause instanceof Error ? cause.message : 'バックアップを読み込めませんでした')
+      }
+    },
+    [active],
+  )
 
   /* -------------------------------------------------------- resume position */
 
@@ -464,6 +590,11 @@ export default function App() {
         busy={busy}
         error={error}
         persisted={persisted}
+        vaultStatus={vaultStatus}
+        vaultName={vaultDir?.name ?? null}
+        onConnectVault={connectVault}
+        onUnlockVault={unlockVault}
+        onDisconnectVault={disconnectVault}
         onOpenFile={openFile}
         onOpenDoc={openDoc}
         onDeleteDoc={removeDoc}
@@ -542,13 +673,67 @@ export default function App() {
           ＋ メモ
         </button>
 
-        <button
-          type="button"
-          onClick={() => download(`${active.doc.name.replace(/\.pdf$/i, '')}.md`, toMarkdown(active.doc, notes, highlights))}
-          title="メモとハイライトを Markdown で書き出す"
-        >
-          書き出し
-        </button>
+        <div className="toolbar__menu">
+          <button
+            type="button"
+            className={menuOpen ? 'is-on' : ''}
+            onClick={() => setMenuOpen((value) => !value)}
+            title="書き出しとバックアップ"
+          >
+            書き出し ▾
+          </button>
+          {menuOpen && (
+            <>
+              <div className="menu__scrim" onClick={() => setMenuOpen(false)} />
+              <div className="menu">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    download(
+                      `${active.doc.name.replace(/\.pdf$/i, '')}.md`,
+                      toMarkdown(active.doc, notes, highlights),
+                    )
+                  }}
+                >
+                  Markdown で書き出す
+                  <small>読む用。読み戻しはできません</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    exportJson()
+                  }}
+                >
+                  JSON でバックアップ
+                  <small>メモとハイライトを完全な形で保存</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    jsonInputRef.current?.click()
+                  }}
+                >
+                  JSON から復元…
+                  <small>このPDFのメモを置き換えます</small>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <input
+          ref={jsonInputRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void importJson(file)
+          }}
+        />
 
         <button type="button" className={panelOpen ? 'is-on' : ''} onClick={() => setPanelOpen((value) => !value)}>
           メモ一覧 ({annotatedPages.length})

@@ -21,8 +21,11 @@ npm install     # pdf.js の cmaps / fonts / wasm も public/ に配置されま
 npm run dev     # http://localhost:5173
 ```
 
-PDF をドロップすると読み込まれます。PDF もメモもブラウザの IndexedDB にだけ保存され、
-外部には送信されません。
+PDF をドロップすると読み込まれます。データが外部に送信されることはありません。
+
+保存先は 2 層です。作業用のコピーはブラウザの IndexedDB に置かれ、**同期フォルダ**を
+設定しておくと、メモは編集のたびに実ファイルとして書き出されます。ブラウザのデータを
+消しても、同じ PDF を入れ直せば指紋照合でメモが再接続されます。
 
 ## できること
 
@@ -33,6 +36,11 @@ PDF をドロップすると読み込まれます。PDF もメモもブラウザ
 - 選択テキストを **`> 引用`** としてメモに送る
 - **メモ一覧**パネルからページへジャンプ
 - メモとハイライトを **1本の Markdown ファイルに書き出し**
+- **同期フォルダ**（Chrome / Edge）: 選んだフォルダへ `<PDF名>.notes.json` と `.md` を
+  自動保存。Google ドライブ・iCloud Drive・Dropbox の中を選べば、そのままバックアップと
+  複数 PC 間の同期になる
+- **JSON バックアップ／復元**: どのブラウザでも使える手動の避難経路
+- 前回読んでいたページから再開。同じ PDF を入れ直しても重複エントリを作らない
 
 ### キーボード
 
@@ -55,17 +63,41 @@ PDF をドロップすると読み込まれます。PDF もメモもブラウザ
 | ファイル | 役割 |
 | --- | --- |
 | `src/pdf.ts` | pdf.js の初期化（worker・CJK 用 cmaps・wasm のパス） |
-| `src/db.ts` | IndexedDB（PDF 本体・メモ・ハイライト） |
+| `src/db.ts` | IndexedDB（PDF 本体・メモ・ハイライト・設定） |
+| `src/lib/vault.ts` | 同期フォルダへの読み書き（File System Access API） |
+| `src/lib/bundle.ts` | 持ち運べる保存形式。フォルダ同期と JSON バックアップの共通形 |
 | `src/components/PageRow.tsx` | 1ページ分の横レーン。表示範囲の判定もここ |
 | `src/components/PdfPage.tsx` | canvas 描画・テキストレイヤー・ハイライト・選択メニュー |
 | `src/components/NoteCard.tsx` | Markdown エディタ／プレビュー |
 | `scripts/copy-pdfjs-assets.mjs` | pdf.js の実行時アセットを `public/pdfjs/` に複製 |
 
+## クラウドと組み合わせる
+
+専用の連携は要りません。デスクトップ同期アプリが作るローカルフォルダを、そのまま
+同期フォルダに指定します。Google ドライブなら次の場所です。
+
+```
+~/Library/CloudStorage/GoogleDrive-<アドレス>/マイドライブ/
+```
+
+Chrome のフォルダ選択ダイアログは macOS の `~/Library` 配下を拒否することがあります。
+その場合は同期フォルダを `~/Documents/PDFノート` など普通の場所に作り、Google ドライブ
+アプリ側の「パソコンのフォルダを同期」でそのフォルダを追加してください。結果は同じです。
+
+複数の PC で同時に編集すると、同期アプリが競合コピーを残します。`findBundle` は同じ
+指紋のファイルをすべて見て `savedAt` が最新のものを採用するので、競合コピーが増えても
+壊れません。
+
 ## 既知の注意点
 
-- `pdfjs-dist@6.2.108` の **minified worker（`pdf.worker.min.mjs`）は使えません**。
-  メタデータには応答するのに `GetOperatorList` に一切返事をせず、全ページが永久に空白のまま
-  になります。`src/pdf.ts` では非 minified の `pdf.worker.mjs` を指しています。
-  バージョンを上げるときは必ず再確認してください。
+- **pdf.js の速度を自動化ブラウザで測らないこと。** Playwright（CDP）は pdf.js の worker に
+  接続するため、メッセージ往復が 20〜100 倍に膨らみます。素の Chrome なら
+  `getOperatorList` は 23ms ですが、CDP 経由では 4.5 秒かかり、ページが白紙のまま
+  固まっているように見えます。以前これを「minified worker のバグ」と誤診しました。
+  実測はページから localhost へ結果を POST させるなど、CDP を介さない方法で行ってください。
+- **同期フォルダは Chrome / Edge 専用**です（`showDirectoryPicker` 非対応の Safari・
+  Firefox では自動的に JSON バックアップの案内に切り替わります）。Chrome は
+  セッションをまたぐとフォルダへの許可を落とすことがあり、その場合は
+  ライブラリ画面に「再接続」ボタンが出ます。
 - PDF 本体は書き換えません。ハイライトとメモはアプリ側に保存されます
   （注釈を焼き込んだ PDF の書き出しが必要なら `pdf-lib` の追加が要ります）。

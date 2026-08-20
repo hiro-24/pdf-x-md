@@ -17,24 +17,35 @@ interface Schema extends DBSchema {
     value: Highlight
     indexes: { 'by-doc': string }
   }
+  /** Small key/value bag. Holds the sync folder handle, which IndexedDB can
+   *  store directly - a FileSystemDirectoryHandle is structured-cloneable. */
+  settings: {
+    key: string
+    value: unknown
+  }
 }
 
 const DB_NAME = 'pdf-note-app'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null
 
 function db() {
   dbPromise ??= openDB<Schema>(DB_NAME, DB_VERSION, {
-    upgrade(database) {
-      const docs = database.createObjectStore('docs', { keyPath: 'id' })
-      docs.createIndex('by-last-opened', 'lastOpenedAt')
+    upgrade(database, oldVersion) {
+      if (oldVersion < 1) {
+        const docs = database.createObjectStore('docs', { keyPath: 'id' })
+        docs.createIndex('by-last-opened', 'lastOpenedAt')
 
-      const notes = database.createObjectStore('notes', { keyPath: 'id' })
-      notes.createIndex('by-doc', 'docId')
+        const notes = database.createObjectStore('notes', { keyPath: 'id' })
+        notes.createIndex('by-doc', 'docId')
 
-      const highlights = database.createObjectStore('highlights', { keyPath: 'id' })
-      highlights.createIndex('by-doc', 'docId')
+        const highlights = database.createObjectStore('highlights', { keyPath: 'id' })
+        highlights.createIndex('by-doc', 'docId')
+      }
+      if (oldVersion < 2) {
+        database.createObjectStore('settings')
+      }
     },
   })
   return dbPromise
@@ -148,4 +159,37 @@ export async function putHighlight(highlight: Highlight): Promise<void> {
 
 export async function deleteHighlight(id: string): Promise<void> {
   await (await db()).delete('highlights', id)
+}
+
+/* ----------------------------------------------------------------- settings */
+
+export async function getSetting<T>(key: string): Promise<T | undefined> {
+  return (await db()).get('settings', key) as Promise<T | undefined>
+}
+
+export async function setSetting(key: string, value: unknown): Promise<void> {
+  await (await db()).put('settings', value, key)
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  await (await db()).delete('settings', key)
+}
+
+/* -------------------------------------------------------------- annotations */
+
+/** Swap in a whole set of notes and highlights, as a restore or a folder sync does. */
+export async function replaceAnnotations(docId: string, notes: Note[], highlights: Highlight[]): Promise<void> {
+  const database = await db()
+  const tx = database.transaction(['notes', 'highlights'], 'readwrite')
+  const staleNotes = await tx.objectStore('notes').index('by-doc').getAllKeys(docId)
+  const staleHighlights = await tx.objectStore('highlights').index('by-doc').getAllKeys(docId)
+  await Promise.all([
+    ...staleNotes.map((key) => tx.objectStore('notes').delete(key)),
+    ...staleHighlights.map((key) => tx.objectStore('highlights').delete(key)),
+  ])
+  await Promise.all([
+    ...notes.map((note) => tx.objectStore('notes').put(note)),
+    ...highlights.map((highlight) => tx.objectStore('highlights').put(highlight)),
+    tx.done,
+  ])
 }
