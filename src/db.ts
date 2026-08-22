@@ -235,13 +235,20 @@ export async function noteCounts(): Promise<Map<string, number>> {
 /* --------------------------------------------------------------------- tags */
 
 const TAGS_KEY = 'tags'
+const TAGS_STAMP_KEY = 'tags-saved-at'
 
 export async function getTags(): Promise<Tag[]> {
   return (await getSetting<Tag[]>(TAGS_KEY)) ?? []
 }
 
-export async function setTags(tags: Tag[]): Promise<void> {
+/** When the palette last changed here, for deciding which side of a sync wins. */
+export async function getTagsStamp(): Promise<number> {
+  return (await getSetting<number>(TAGS_STAMP_KEY)) ?? 0
+}
+
+export async function setTags(tags: Tag[], savedAt: number = Date.now()): Promise<void> {
   await setSetting(TAGS_KEY, tags)
+  await setSetting(TAGS_STAMP_KEY, savedAt)
 }
 
 /* ------------------------------------------------------------------ covers */

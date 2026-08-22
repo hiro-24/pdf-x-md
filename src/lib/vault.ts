@@ -1,4 +1,4 @@
-import { parseBundle, type Bundle } from './bundle'
+import { parseBundle, parsePaletteFile, type Bundle, type PaletteFile } from './bundle'
 
 /**
  * A "vault" is a folder on the real filesystem that mirrors every document's
@@ -115,4 +115,24 @@ export async function findBundle(
 
   // Only trust the filename when neither side has a fingerprint to compare.
   return fingerprint ? byFingerprint : byName
+}
+
+/* ------------------------------------------------------------------ palette */
+
+/** Leading underscore so it sorts above the notes and reads as metadata. It
+ *  deliberately doesn't end in `.notes.json`, which is what findBundle scans for. */
+const PALETTE_FILE = '_tags.json'
+
+export async function readPalette(dir: FileSystemDirectoryHandle): Promise<PaletteFile | null> {
+  const text = await readFileText(dir, PALETTE_FILE)
+  if (!text) return null
+  try {
+    return parsePaletteFile(text)
+  } catch {
+    return null
+  }
+}
+
+export async function writePalette(dir: FileSystemDirectoryHandle, file: PaletteFile): Promise<void> {
+  await writeFileText(dir, PALETTE_FILE, JSON.stringify(file, null, 2))
 }

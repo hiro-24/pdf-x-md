@@ -1,4 +1,4 @@
-import type { DocSummary, Highlight, Note } from '../types'
+import type { DocSummary, Highlight, Note, Tag } from '../types'
 
 /**
  * The portable form of a document's annotations: what gets written to the sync
@@ -72,4 +72,43 @@ export function adoptBundle(bundle: Bundle, docId: string): { notes: Note[]; hig
     notes: bundle.notes.map((note) => ({ ...note, docId })),
     highlights: bundle.highlights.map((highlight) => ({ ...highlight, docId })),
   }
+}
+
+/* ------------------------------------------------------------------ palette */
+
+/** The library's tag colours, as written to `_tags.json` in the sync folder. */
+export interface PaletteFile {
+  app: 'pdf-note-app'
+  kind: 'palette'
+  version: number
+  savedAt: number
+  tags: Tag[]
+}
+
+export function toPaletteFile(tags: Tag[], savedAt: number): PaletteFile {
+  return { app: 'pdf-note-app', kind: 'palette', version: BUNDLE_VERSION, savedAt, tags }
+}
+
+export function parsePaletteFile(text: string): PaletteFile {
+  const value: unknown = JSON.parse(text)
+  const file = value as PaletteFile
+  if (typeof value !== 'object' || value === null || file.app !== 'pdf-note-app' || !Array.isArray(file.tags)) {
+    throw new Error('タグの定義ファイルではありません')
+  }
+  return file
+}
+
+/**
+ * Union the two palettes by tag name. Whole-file last-write-wins would drop
+ * tags created on the other machine since the last sync, so only the *colour*
+ * of a name both sides know is decided by the timestamp.
+ */
+export function mergePalettes(local: Tag[], localStamp: number, remote: Tag[], remoteStamp: number): Tag[] {
+  const winner = remoteStamp > localStamp ? remote : local
+  const loser = remoteStamp > localStamp ? local : remote
+
+  const merged = new Map<string, Tag>()
+  for (const tag of loser) merged.set(tag.name, tag)
+  for (const tag of winner) merged.set(tag.name, tag)
+  return [...merged.values()]
 }

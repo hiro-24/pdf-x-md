@@ -4,8 +4,17 @@ import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
 import * as db from './db'
 import { download, toMarkdown } from './lib/markdown-export'
-import { adoptBundle, parseBundle, stampOf, toBundle } from './lib/bundle'
-import { findBundle, permissionState, pickFolder, requestAccess, vaultSupported, writeBundle } from './lib/vault'
+import { adoptBundle, mergePalettes, parseBundle, stampOf, toBundle, toPaletteFile } from './lib/bundle'
+import {
+  findBundle,
+  permissionState,
+  pickFolder,
+  readPalette,
+  requestAccess,
+  vaultSupported,
+  writeBundle,
+  writePalette,
+} from './lib/vault'
 import { renderCover } from './lib/thumbnail'
 import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
@@ -147,6 +156,8 @@ export default function App() {
   const jsonInputRef = useRef<HTMLInputElement>(null)
   /** docId -> object URL for its cover, so a second hover is instant. */
   const coverUrls = useRef(new Map<string, string>())
+  /** present() runs above savePalette in the file; the ref bridges the gap. */
+  const savePaletteRef = useRef<(tags: Tag[]) => Promise<void>>(async () => {})
 
   const scale = fitMode === 'manual' ? ZOOM_STEPS[zoomIndex] : fitScale
 
@@ -239,9 +250,10 @@ export default function App() {
           const known = await db.getTags()
           const fresh = (effective.tags ?? []).filter((name) => !known.some((tag) => tag.name === name))
           if (fresh.length) {
-            const grown = [...known, ...fresh.map((name, i) => ({ name, color: TAG_COLORS[(known.length + i) % TAG_COLORS.length] }))]
-            await db.setTags(grown)
-            setPalette(grown)
+            await savePaletteRef.current([
+              ...known,
+              ...fresh.map((name, i) => ({ name, color: TAG_COLORS[(known.length + i) % TAG_COLORS.length] })),
+            ])
           }
         }
       } catch (cause) {
@@ -428,19 +440,42 @@ export default function App() {
     setDocs(await db.listDocs())
   }, [])
 
-  const recolorTag = useCallback(async (name: string, color: TagColor) => {
-    const updated = (await db.getTags()).map((tag) => (tag.name === name ? { ...tag, color } : tag))
-    await db.setTags(updated)
-    setPalette(updated)
-  }, [])
+  /** Store the palette, show it, and mirror it to the sync folder. */
+  const savePalette = useCallback(
+    async (tags: Tag[]) => {
+      const savedAt = Date.now()
+      await db.setTags(tags, savedAt)
+      setPalette(tags)
+      if (vaultDir && vaultStatus === 'ready') {
+        writePalette(vaultDir, toPaletteFile(tags, savedAt)).catch((cause) =>
+          console.error('タグの色を同期フォルダに書けませんでした', cause),
+        )
+      }
+    },
+    [vaultDir, vaultStatus],
+  )
 
-  const createTag = useCallback(async (tag: Tag) => {
-    const next = await db.getTags()
-    if (next.some((existing) => existing.name === tag.name)) return
-    const updated = [...next, tag]
-    await db.setTags(updated)
-    setPalette(updated)
-  }, [])
+  // Assigned in an effect, not during render: writing a ref while rendering is
+  // not safe under StrictMode's double invocation.
+  useEffect(() => {
+    savePaletteRef.current = savePalette
+  }, [savePalette])
+
+  const recolorTag = useCallback(
+    async (name: string, color: TagColor) => {
+      await savePalette((await db.getTags()).map((tag) => (tag.name === name ? { ...tag, color } : tag)))
+    },
+    [savePalette],
+  )
+
+  const createTag = useCallback(
+    async (tag: Tag) => {
+      const current = await db.getTags()
+      if (current.some((existing) => existing.name === tag.name)) return
+      await savePalette([...current, tag])
+    },
+    [savePalette],
+  )
 
   /* ------------------------------------------------------------ sync folder */
 
@@ -468,6 +503,37 @@ export default function App() {
     setVaultDir(null)
     setVaultStatus('off')
   }, [])
+
+  // Reconcile the palette with the folder as soon as it is usable. Tag names are
+  // unioned so neither machine loses one; only the colour of a name both sides
+  // already know is settled by the timestamp.
+  useEffect(() => {
+    if (!vaultDir || vaultStatus !== 'ready') return
+    let cancelled = false
+
+    const reconcile = async () => {
+      const [local, localStamp, remote] = await Promise.all([db.getTags(), db.getTagsStamp(), readPalette(vaultDir)])
+      if (cancelled) return
+
+      const merged = mergePalettes(local, localStamp, remote?.tags ?? [], remote?.savedAt ?? 0)
+      const stamp = Math.max(localStamp, remote?.savedAt ?? 0)
+
+      if (JSON.stringify(merged) !== JSON.stringify(local)) {
+        await db.setTags(merged, stamp)
+        if (!cancelled) setPalette(merged)
+      }
+      // Only write when the folder is actually out of date, so opening the app
+      // doesn't churn the file (and the cloud sync behind it) every time.
+      if (!remote || JSON.stringify(merged) !== JSON.stringify(remote.tags)) {
+        await writePalette(vaultDir, toPaletteFile(merged, stamp))
+      }
+    }
+
+    reconcile().catch((cause) => console.error('タグの色を同期できませんでした', cause))
+    return () => {
+      cancelled = true
+    }
+  }, [vaultDir, vaultStatus])
 
   /**
    * Mirror the open document into the folder. Deliberately not keyed on
