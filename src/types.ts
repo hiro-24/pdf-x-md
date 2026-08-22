@@ -16,6 +16,22 @@ export interface DocRecord {
   fingerprint?: string | null
   /** 1-based page the reader was last on, so reopening resumes there. */
   lastPage?: number
+  /**
+   * What the reader calls this document. Seeded from the PDF's own metadata
+   * title, falling back to the filename, and editable in the library table.
+   */
+  title?: string
+  /** Tag names, not ids: names are what travel to another machine intact. */
+  tags?: string[]
+}
+
+export const TAG_COLORS = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const
+export type TagColor = (typeof TAG_COLORS)[number]
+
+/** A label in the library's palette. The name is the identity. */
+export interface Tag {
+  name: string
+  color: TagColor
 }
 
 /** Summary of a document, without the (potentially huge) blob. */

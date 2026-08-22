@@ -6,7 +6,7 @@ import * as db from './db'
 import { download, toMarkdown } from './lib/markdown-export'
 import { adoptBundle, parseBundle, stampOf, toBundle } from './lib/bundle'
 import { findBundle, permissionState, pickFolder, requestAccess, vaultSupported, writeBundle } from './lib/vault'
-import type { DocSummary, Highlight, HighlightColor, Note, Rect } from './types'
+import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag } from './types'
 
 /** Where the sync folder handle lives between sessions. */
 const VAULT_KEY = 'vault-dir'
@@ -33,6 +33,23 @@ function stepZoom(scale: number, delta: -1 | 1): number {
     if (Math.abs(ZOOM_STEPS[i] - scale) < Math.abs(ZOOM_STEPS[nearest] - scale)) nearest = i
   }
   return Math.min(ZOOM_STEPS.length - 1, Math.max(0, nearest + delta))
+}
+
+/**
+ * Turn a PDF's embedded title into something worth showing, or nothing.
+ * Producers leave all sorts of debris in this field: the source document's
+ * filename, the URL a page was printed from, or a literal "untitled".
+ */
+function cleanTitle(raw: string | undefined): string | null {
+  let title = raw?.trim() ?? ''
+  // "Microsoft Word - 論文最終版.docx" and friends: the useful part is in the middle.
+  title = title.replace(/^(microsoft\s+(word|powerpoint|excel)|adobe\s+\w+)\s*-\s*/i, '')
+  title = title.replace(/\.(pdf|docx?|pptx?|xlsx?|tex|indd|pages)$/i, '').trim()
+  if (title.length < 2) return null
+  if (/^untitled$/i.test(title)) return null
+  // A URL or a scheme is the browser's print job showing through, not a title.
+  if (/^(about|https?|file|data|chrome|blob):/i.test(title)) return null
+  return title
 }
 
 /** First non-empty line of a note, with Markdown syntax stripped for the index. */
@@ -102,6 +119,9 @@ export default function App() {
   const [vaultDir, setVaultDir] = useState<FileSystemDirectoryHandle | null>(null)
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>(vaultSupported ? 'off' : 'unsupported')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [palette, setPalette] = useState<Tag[]>([])
+  const [searchIndex, setSearchIndex] = useState<Map<string, string>>(new Map())
+  const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map())
   /** True while we are scrolling back to the remembered page on open. */
   const [restoring, setRestoring] = useState(false)
 
@@ -119,6 +139,7 @@ export default function App() {
 
   useEffect(() => {
     db.listDocs().then(setDocs).catch(console.error)
+    db.getTags().then(setPalette).catch(console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
     if (!vaultSupported) return
@@ -136,6 +157,14 @@ export default function App() {
   useEffect(() => {
     currentPageRef.current = currentPage
   }, [currentPage])
+
+  // Rebuilt on the way back to the library, so counts and note search reflect
+  // whatever was just written in the reader.
+  useEffect(() => {
+    if (active) return
+    db.searchIndex().then(setSearchIndex).catch(console.error)
+    db.noteCounts().then(setNoteCounts).catch(console.error)
+  }, [active])
 
   /* ------------------------------------------------------------- fit width */
 
@@ -179,8 +208,25 @@ export default function App() {
           loadedNotes = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
           loadedHighlights = adopted.highlights
           await db.replaceAnnotations(doc.id, loadedNotes, loadedHighlights)
-          effective = { ...doc, lastPage: stored.doc.lastPage || doc.lastPage }
-          await db.updateDoc(doc.id, { lastPage: effective.lastPage })
+          effective = {
+            ...doc,
+            lastPage: stored.doc.lastPage || doc.lastPage,
+            title: stored.doc.title || doc.title,
+            tags: stored.doc.tags ?? doc.tags,
+          }
+          await db.updateDoc(doc.id, {
+            lastPage: effective.lastPage,
+            title: effective.title,
+            tags: effective.tags,
+          })
+          // Tags arriving from another machine need a colour here to show up.
+          const known = await db.getTags()
+          const fresh = (effective.tags ?? []).filter((name) => !known.some((tag) => tag.name === name))
+          if (fresh.length) {
+            const grown = [...known, ...fresh.map((name, i) => ({ name, color: TAG_COLORS[(known.length + i) % TAG_COLORS.length] }))]
+            await db.setTags(grown)
+            setPalette(grown)
+          }
         }
       } catch (cause) {
         console.error('同期フォルダから読み込めませんでした', cause)
@@ -256,6 +302,16 @@ export default function App() {
           return
         }
 
+        // Many PDFs carry a real title in their metadata; it beats the filename
+        // as a starting point, but only when it isn't junk left by the producer.
+        let title = file.name.replace(/\.pdf$/i, '')
+        try {
+          const info = (await pdf.getMetadata()).info as { Title?: string } | undefined
+          title = cleanTitle(info?.Title) ?? title
+        } catch {
+          // Metadata is optional; the filename is a perfectly good fallback.
+        }
+
         const doc: DocSummary = {
           id: uid(),
           name: file.name,
@@ -265,6 +321,8 @@ export default function App() {
           lastOpenedAt: Date.now(),
           fingerprint,
           lastPage: 1,
+          title,
+          tags: [],
         }
         await db.putDoc({ ...doc, blob: file })
         await present(doc, pdf)
@@ -288,6 +346,30 @@ export default function App() {
     setHighlights([])
     setQuoteTarget(null)
   }, [currentPage])
+
+  /* ------------------------------------------------------ library metadata */
+
+  const renameDoc = useCallback(async (id: string, title: string) => {
+    await db.updateDoc(id, { title })
+    setDocs(await db.listDocs())
+  }, [])
+
+  const toggleTag = useCallback(async (id: string, name: string) => {
+    const record = await db.getDoc(id)
+    if (!record) return
+    const current = record.tags ?? []
+    const tags = current.includes(name) ? current.filter((tag) => tag !== name) : [...current, name]
+    await db.updateDoc(id, { tags })
+    setDocs(await db.listDocs())
+  }, [])
+
+  const createTag = useCallback(async (tag: Tag) => {
+    const next = await db.getTags()
+    if (next.some((existing) => existing.name === tag.name)) return
+    const updated = [...next, tag]
+    await db.setTags(updated)
+    setPalette(updated)
+  }, [])
 
   /* ------------------------------------------------------------ sync folder */
 
@@ -592,6 +674,12 @@ export default function App() {
         persisted={persisted}
         vaultStatus={vaultStatus}
         vaultName={vaultDir?.name ?? null}
+        palette={palette}
+        searchIndex={searchIndex}
+        noteCounts={noteCounts}
+        onRenameDoc={renameDoc}
+        onToggleTag={toggleTag}
+        onCreateTag={createTag}
         onConnectVault={connectVault}
         onUnlockVault={unlockVault}
         onDisconnectVault={disconnectVault}
@@ -613,7 +701,7 @@ export default function App() {
           ←
         </button>
         <span className="toolbar__name" title={active.doc.name}>
-          {active.doc.name}
+          {active.doc.title?.trim() || active.doc.name.replace(/\.pdf$/i, '')}
         </span>
 
         <span className="toolbar__page">

@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { DocRecord, DocSummary, Highlight, Note } from './types'
+import type { DocRecord, DocSummary, Highlight, Note, Tag } from './types'
 
 interface Schema extends DBSchema {
   docs: {
@@ -192,4 +192,44 @@ export async function replaceAnnotations(docId: string, notes: Note[], highlight
     ...highlights.map((highlight) => tx.objectStore('highlights').put(highlight)),
     tx.done,
   ])
+}
+
+/* ------------------------------------------------------------------- search */
+
+/**
+ * Every note and highlight in the library, flattened per document. The library
+ * screen searches note text, so it needs all of it up front - these are small
+ * text records, and reading them beats keeping a separate index in sync.
+ */
+export async function searchIndex(): Promise<Map<string, string>> {
+  const database = await db()
+  const [notes, highlights] = await Promise.all([database.getAll('notes'), database.getAll('highlights')])
+  const index = new Map<string, string>()
+  const append = (docId: string, text: string) => {
+    if (!text.trim()) return
+    index.set(docId, index.has(docId) ? `${index.get(docId)}\n${text}` : text)
+  }
+  for (const note of notes) append(note.docId, note.body)
+  for (const highlight of highlights) append(highlight.docId, highlight.text)
+  return index
+}
+
+/** How many notes each document has, for the library's count column. */
+export async function noteCounts(): Promise<Map<string, number>> {
+  const notes = await (await db()).getAll('notes')
+  const counts = new Map<string, number>()
+  for (const note of notes) counts.set(note.docId, (counts.get(note.docId) ?? 0) + 1)
+  return counts
+}
+
+/* --------------------------------------------------------------------- tags */
+
+const TAGS_KEY = 'tags'
+
+export async function getTags(): Promise<Tag[]> {
+  return (await getSetting<Tag[]>(TAGS_KEY)) ?? []
+}
+
+export async function setTags(tags: Tag[]): Promise<void> {
+  await setSetting(TAGS_KEY, tags)
 }

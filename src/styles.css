@@ -891,3 +891,366 @@ button {
   font-size: 11.5px;
   color: var(--muted);
 }
+
+/* ------------------------------------------------------- library: search */
+
+.library__inner {
+  width: min(980px, 100%);
+}
+
+.library__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 30px 0 12px;
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.library__count {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.library__empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- tags */
+
+.tag {
+  display: inline-block;
+  max-width: 160px;
+  padding: 1px 9px;
+  border: 1px solid transparent;
+  border-radius: 99px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.tag--gray   { background: color-mix(in srgb, #8b8b85 22%, transparent); color: color-mix(in srgb, #55554f 88%, var(--text)); }
+.tag--red    { background: color-mix(in srgb, #e2564a 22%, transparent); color: color-mix(in srgb, #b23a2f 88%, var(--text)); }
+.tag--orange { background: color-mix(in srgb, #e08a3c 24%, transparent); color: color-mix(in srgb, #a5601f 88%, var(--text)); }
+.tag--yellow { background: color-mix(in srgb, #e0c23c 30%, transparent); color: color-mix(in srgb, #8a7112 88%, var(--text)); }
+.tag--green  { background: color-mix(in srgb, #4caf62 24%, transparent); color: color-mix(in srgb, #2d7a3f 88%, var(--text)); }
+.tag--teal   { background: color-mix(in srgb, #35a89b 24%, transparent); color: color-mix(in srgb, #1f7970 88%, var(--text)); }
+.tag--blue   { background: color-mix(in srgb, #3d82d8 22%, transparent); color: color-mix(in srgb, #2a60a8 88%, var(--text)); }
+.tag--purple { background: color-mix(in srgb, #8b62d8 24%, transparent); color: color-mix(in srgb, #6340a8 88%, var(--text)); }
+.tag--pink   { background: color-mix(in srgb, #d85f9e 24%, transparent); color: color-mix(in srgb, #a83b74 88%, var(--text)); }
+
+@media (prefers-color-scheme: dark) {
+  .tag {
+    color: var(--text);
+  }
+}
+
+button.tag {
+  cursor: pointer;
+}
+
+button.tag:hover {
+  border-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.tag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.tag-filters .tag.is-on {
+  border-color: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.tag-filters__clear {
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------- table */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.doc-table th,
+.doc-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.doc-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.doc-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.doc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.doc-table thead button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.doc-table thead button:hover {
+  color: var(--text);
+}
+
+.doc-table__arrow {
+  font-size: 9px;
+  width: 9px;
+}
+
+.col-num,
+.col-date {
+  width: 1%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.col-num {
+  text-align: right;
+}
+
+.doc-table .col-num {
+  text-align: right;
+}
+
+.col-tags {
+  width: 34%;
+}
+
+.col-actions {
+  width: 1%;
+}
+
+.doc-table__open {
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.doc-table__open:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.doc-table__rename-btn {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: transparent;
+}
+
+tr:hover .doc-table__rename-btn {
+  color: var(--muted);
+}
+
+.doc-table__rename-btn:hover {
+  color: var(--accent);
+}
+
+.doc-table__file {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-table__rename {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.doc-table__rename:focus {
+  outline: none;
+}
+
+.doc-table__delete {
+  padding: 0 4px;
+  color: transparent;
+}
+
+tr:hover .doc-table__delete {
+  color: var(--muted);
+}
+
+.doc-table__delete:hover {
+  color: #c2412d;
+}
+
+/* ---------------------------------------------------------- tag picker */
+
+.tag-cell {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-cell__add {
+  padding: 0 6px;
+  border-radius: 99px;
+  border: 1px dashed var(--border);
+  font-size: 12px;
+  color: transparent;
+  line-height: 1.6;
+}
+
+tr:hover .tag-cell__add {
+  color: var(--muted);
+}
+
+.tag-cell__add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tagpicker {
+  position: fixed;
+  z-index: 100;
+  width: 240px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.tagpicker__search {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.tagpicker__search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tagpicker__list {
+  max-height: 190px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.tagpicker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tagpicker__item:hover {
+  background: var(--surface-2);
+}
+
+.tagpicker__empty {
+  margin: 8px 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tagpicker__create {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  text-align: left;
+  color: var(--accent);
+}
+
+.tagpicker__create:hover {
+  background: var(--surface-2);
+}
+
+/* Once the library has contents the table is the point of the screen, so the
+   drop target steps back to a single line instead of a poster-sized box. */
+.dropzone.is-compact {
+  min-height: 0;
+  padding: 12px 18px;
+  border-width: 1px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+/* The add-tag affordance is noise on every row; reveal it with the row. */
+.tag-cell__add {
+  border-color: transparent;
+}
+
+tr:hover .tag-cell__add {
+  border-color: var(--border);
+}

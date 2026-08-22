@@ -15,6 +15,9 @@ export interface Bundle {
     fingerprint: string | null
     pageCount: number
     lastPage: number
+    title?: string
+    /** Tag names. Colours live in the library palette, not in each document. */
+    tags?: string[]
   }
   notes: Omit<Note, 'docId'>[]
   highlights: Omit<Highlight, 'docId'>[]
@@ -32,6 +35,8 @@ export function toBundle(doc: DocSummary, notes: Note[], highlights: Highlight[]
       fingerprint: doc.fingerprint ?? null,
       pageCount: doc.pageCount,
       lastPage: doc.lastPage ?? 1,
+      title: doc.title,
+      tags: doc.tags ?? [],
     },
     notes: notes.map(({ docId: _docId, ...note }) => note),
     highlights: highlights.map(({ docId: _docId, ...highlight }) => highlight),
