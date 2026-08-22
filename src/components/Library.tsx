@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import DocTable, { titleOf, type Sort, type SortKey } from './DocTable'
-import type { DocSummary, Tag } from '../types'
+import type { DocSummary, Tag, TagColor } from '../types'
 
 interface Props {
   docs: DocSummary[]
@@ -24,6 +24,7 @@ interface Props {
   onRenameDoc: (id: string, title: string) => void
   onToggleTag: (id: string, name: string) => void
   onCreateTag: (tag: Tag) => void
+  onRecolorTag: (name: string, color: TagColor) => void
   onRequestCover: (id: string) => Promise<string | null>
 }
 
@@ -46,6 +47,7 @@ export default function Library({
   onRenameDoc,
   onToggleTag,
   onCreateTag,
+  onRecolorTag,
   onRequestCover,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -191,6 +193,7 @@ export default function Library({
                 onRename={onRenameDoc}
                 onToggleTag={onToggleTag}
                 onCreateTag={onCreateTag}
+                onRecolorTag={onRecolorTag}
                 onFilterTag={toggleFilter}
                 onDelete={onDeleteDoc}
                 onRequestCover={onRequestCover}

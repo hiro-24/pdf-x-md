@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import TagPicker from './TagPicker'
 import CoverPreview from './CoverPreview'
-import type { DocSummary, Tag } from '../types'
+import type { DocSummary, Tag, TagColor } from '../types'
 
 /** Long enough that running the cursor down the table doesn't render covers. */
 const HOVER_DELAY = 260
@@ -22,6 +22,7 @@ interface Props {
   onRename: (id: string, title: string) => void
   onToggleTag: (id: string, name: string) => void
   onCreateTag: (tag: Tag) => void
+  onRecolorTag: (name: string, color: TagColor) => void
   onFilterTag: (name: string) => void
   onDelete: (id: string) => void
   /** Resolves to an object URL for the cover, rendering it if this is the first look. */
@@ -176,6 +177,7 @@ export default function DocTable(props: Props) {
                       applied={doc.tags ?? []}
                       onToggle={(name) => props.onToggleTag(doc.id, name)}
                       onCreate={props.onCreateTag}
+                      onRecolor={props.onRecolorTag}
                       onClose={() => setPicking(null)}
                     />
                   )}

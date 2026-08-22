@@ -7,7 +7,7 @@ import { download, toMarkdown } from './lib/markdown-export'
 import { adoptBundle, parseBundle, stampOf, toBundle } from './lib/bundle'
 import { findBundle, permissionState, pickFolder, requestAccess, vaultSupported, writeBundle } from './lib/vault'
 import { renderCover } from './lib/thumbnail'
-import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag } from './types'
+import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
 /** Where the sync folder handle lives between sessions. */
 const VAULT_KEY = 'vault-dir'
@@ -51,6 +51,16 @@ function cleanTitle(raw: string | undefined): string | null {
   // A URL or a scheme is the browser's print job showing through, not a title.
   if (/^(about|https?|file|data|chrome|blob):/i.test(title)) return null
   return title
+}
+
+/** Teardown, not failure: the reader closed the document mid-render. */
+function isTeardown(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return false
+  return (
+    cause.name === 'RenderingCancelledException' ||
+    cause.name === 'AbortException' ||
+    cause.message === 'Transport destroyed'
+  )
 }
 
 /** First non-empty line of a note, with Markdown syntax stripped for the index. */
@@ -342,9 +352,13 @@ export default function App() {
         }
         await db.putDoc({ ...doc, blob: file })
         // The document is already parsed here, so the cover is nearly free.
+        // Fire and forget: if closing the document cancels it, the first hover
+        // in the library renders the cover instead.
         renderCover(pdf)
           .then((cover) => cover && db.putThumb(doc.id, cover))
-          .catch((cause) => console.error('表紙を作れませんでした', cause))
+          .catch((cause) => {
+            if (!isTeardown(cause)) console.error('表紙を作れませんでした', cause)
+          })
         await present(doc, pdf)
       } catch (cause) {
         console.error(cause)
@@ -385,7 +399,7 @@ export default function App() {
         blob = (await renderCover(await task.promise)) ?? undefined
         if (blob) await db.putThumb(id, blob)
       } catch (cause) {
-        console.error('表紙を作れませんでした', cause)
+        if (!isTeardown(cause)) console.error('表紙を作れませんでした', cause)
         return null
       } finally {
         await task.destroy().catch(() => {})
@@ -412,6 +426,12 @@ export default function App() {
     const tags = current.includes(name) ? current.filter((tag) => tag !== name) : [...current, name]
     await db.updateDoc(id, { tags })
     setDocs(await db.listDocs())
+  }, [])
+
+  const recolorTag = useCallback(async (name: string, color: TagColor) => {
+    const updated = (await db.getTags()).map((tag) => (tag.name === name ? { ...tag, color } : tag))
+    await db.setTags(updated)
+    setPalette(updated)
   }, [])
 
   const createTag = useCallback(async (tag: Tag) => {
@@ -734,6 +754,7 @@ export default function App() {
         onRenameDoc={renameDoc}
         onToggleTag={toggleTag}
         onCreateTag={createTag}
+        onRecolorTag={recolorTag}
         onRequestCover={requestCover}
         onConnectVault={connectVault}
         onUnlockVault={unlockVault}
