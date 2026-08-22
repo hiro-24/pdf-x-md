@@ -1254,3 +1254,48 @@ tr:hover .tag-cell__add {
 tr:hover .tag-cell__add {
   border-color: var(--border);
 }
+
+/* ------------------------------------------------------------ cover hover */
+
+.cover {
+  position: fixed;
+  z-index: 90;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.1), 0 18px 40px rgb(0 0 0 / 0.18);
+  pointer-events: none;
+  animation: cover-in 0.12s ease-out;
+}
+
+@keyframes cover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.cover__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  /* PDF pages are white; a hairline keeps the edge visible in dark mode. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+
+.cover__loading {
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover {
+    animation: none;
+  }
+}

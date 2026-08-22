@@ -23,10 +23,16 @@ interface Schema extends DBSchema {
     key: string
     value: unknown
   }
+  /** Cover images, keyed by document id. Kept out of `docs` so that listing the
+   *  library doesn't drag a pile of bitmaps along with it. */
+  thumbs: {
+    key: string
+    value: Blob
+  }
 }
 
 const DB_NAME = 'pdf-note-app'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null
 
@@ -45,6 +51,9 @@ function db() {
       }
       if (oldVersion < 2) {
         database.createObjectStore('settings')
+      }
+      if (oldVersion < 3) {
+        database.createObjectStore('thumbs')
       }
     },
   })
@@ -115,6 +124,7 @@ export async function matchDoc(
 
 export async function deleteDoc(id: string): Promise<void> {
   const database = await db()
+  await database.delete('thumbs', id)
   const tx = database.transaction(['docs', 'notes', 'highlights'], 'readwrite')
   const noteIds = await tx.objectStore('notes').index('by-doc').getAllKeys(id)
   const highlightIds = await tx.objectStore('highlights').index('by-doc').getAllKeys(id)
@@ -232,4 +242,18 @@ export async function getTags(): Promise<Tag[]> {
 
 export async function setTags(tags: Tag[]): Promise<void> {
   await setSetting(TAGS_KEY, tags)
+}
+
+/* ------------------------------------------------------------------ covers */
+
+export async function getThumb(docId: string): Promise<Blob | undefined> {
+  return (await db()).get('thumbs', docId)
+}
+
+export async function putThumb(docId: string, blob: Blob): Promise<void> {
+  await (await db()).put('thumbs', blob, docId)
+}
+
+export async function deleteThumb(docId: string): Promise<void> {
+  await (await db()).delete('thumbs', docId)
 }

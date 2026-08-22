@@ -24,6 +24,7 @@ interface Props {
   onRenameDoc: (id: string, title: string) => void
   onToggleTag: (id: string, name: string) => void
   onCreateTag: (tag: Tag) => void
+  onRequestCover: (id: string) => Promise<string | null>
 }
 
 export default function Library({
@@ -45,6 +46,7 @@ export default function Library({
   onRenameDoc,
   onToggleTag,
   onCreateTag,
+  onRequestCover,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -191,6 +193,7 @@ export default function Library({
                 onCreateTag={onCreateTag}
                 onFilterTag={toggleFilter}
                 onDelete={onDeleteDoc}
+                onRequestCover={onRequestCover}
               />
             ) : (
               <p className="library__empty">条件に合う PDF がありません。</p>

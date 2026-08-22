@@ -1,6 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import TagPicker from './TagPicker'
+import CoverPreview from './CoverPreview'
 import type { DocSummary, Tag } from '../types'
+
+/** Long enough that running the cursor down the table doesn't render covers. */
+const HOVER_DELAY = 260
 
 export type SortKey = 'title' | 'pages' | 'notes' | 'opened' | 'added'
 export interface Sort {
@@ -20,6 +24,8 @@ interface Props {
   onCreateTag: (tag: Tag) => void
   onFilterTag: (name: string) => void
   onDelete: (id: string) => void
+  /** Resolves to an object URL for the cover, rendering it if this is the first look. */
+  onRequestCover: (id: string) => Promise<string | null>
 }
 
 const COLUMNS: { key: SortKey; label: string; className: string }[] = [
@@ -39,6 +45,25 @@ export default function DocTable(props: Props) {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [picking, setPicking] = useState<{ id: string; anchor: DOMRect } | null>(null)
+  const [hover, setHover] = useState<{ id: string; anchor: DOMRect; src: string | null } | null>(null)
+  const hoverTimer = useRef<number | null>(null)
+
+  useEffect(() => () => window.clearTimeout(hoverTimer.current ?? undefined), [])
+
+  const openCover = (id: string, anchor: DOMRect) => {
+    window.clearTimeout(hoverTimer.current ?? undefined)
+    hoverTimer.current = window.setTimeout(async () => {
+      setHover({ id, anchor, src: null })
+      const src = await props.onRequestCover(id)
+      // The cursor may have moved on while the page was rendering.
+      setHover((current) => (current?.id === id ? { ...current, src } : current))
+    }, HOVER_DELAY)
+  }
+
+  const closeCover = () => {
+    window.clearTimeout(hoverTimer.current ?? undefined)
+    setHover(null)
+  }
 
   const colorOf = (name: string) => palette.find((tag) => tag.name === name)?.color ?? 'gray'
 
@@ -83,7 +108,15 @@ export default function DocTable(props: Props) {
                   />
                 ) : (
                   <>
-                    <button type="button" className="doc-table__open" onClick={() => props.onOpen(doc.id)}>
+                    <button
+                      type="button"
+                      className="doc-table__open"
+                      onClick={() => props.onOpen(doc.id)}
+                      onMouseEnter={(event) => openCover(doc.id, event.currentTarget.getBoundingClientRect())}
+                      onMouseLeave={closeCover}
+                      onFocus={(event) => openCover(doc.id, event.currentTarget.getBoundingClientRect())}
+                      onBlur={closeCover}
+                    >
                       {titleOf(doc)}
                     </button>
                     <button
@@ -164,6 +197,7 @@ export default function DocTable(props: Props) {
           ))}
         </tbody>
       </table>
+      {hover && <CoverPreview anchor={hover.anchor} src={hover.src} />}
     </div>
   )
 }

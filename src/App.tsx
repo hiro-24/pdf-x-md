@@ -6,6 +6,7 @@ import * as db from './db'
 import { download, toMarkdown } from './lib/markdown-export'
 import { adoptBundle, parseBundle, stampOf, toBundle } from './lib/bundle'
 import { findBundle, permissionState, pickFolder, requestAccess, vaultSupported, writeBundle } from './lib/vault'
+import { renderCover } from './lib/thumbnail'
 import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag } from './types'
 
 /** Where the sync folder handle lives between sessions. */
@@ -134,6 +135,8 @@ export default function App() {
   /** Read by the folder writer, which must not re-run on every scroll. */
   const currentPageRef = useRef(1)
   const jsonInputRef = useRef<HTMLInputElement>(null)
+  /** docId -> object URL for its cover, so a second hover is instant. */
+  const coverUrls = useRef(new Map<string, string>())
 
   const scale = fitMode === 'manual' ? ZOOM_STEPS[zoomIndex] : fitScale
 
@@ -157,6 +160,9 @@ export default function App() {
   useEffect(() => {
     currentPageRef.current = currentPage
   }, [currentPage])
+
+  const covers = coverUrls.current
+  useEffect(() => () => covers.forEach((url) => URL.revokeObjectURL(url)), [covers])
 
   // Rebuilt on the way back to the library, so counts and note search reflect
   // whatever was just written in the reader.
@@ -297,6 +303,16 @@ export default function App() {
               // Re-dropping a changed file means "use this version from now on".
               ...(renamed ? { name: file.name, size: file.size, blob: file } : {}),
             })
+            if (renamed) {
+              // The bytes changed, so the stored cover is of the old version.
+              const stale = coverUrls.current.get(existing.id)
+              if (stale) URL.revokeObjectURL(stale)
+              coverUrls.current.delete(existing.id)
+              await db.deleteThumb(existing.id)
+              renderCover(pdf)
+                .then((cover) => cover && db.putThumb(existing.id, cover))
+                .catch(() => {})
+            }
           }
           await present({ ...existing, name: file.name, size: file.size, fingerprint, pageCount: pdf.numPages }, pdf)
           return
@@ -325,6 +341,10 @@ export default function App() {
           tags: [],
         }
         await db.putDoc({ ...doc, blob: file })
+        // The document is already parsed here, so the cover is nearly free.
+        renderCover(pdf)
+          .then((cover) => cover && db.putThumb(doc.id, cover))
+          .catch((cause) => console.error('表紙を作れませんでした', cause))
         await present(doc, pdf)
       } catch (cause) {
         console.error(cause)
@@ -346,6 +366,37 @@ export default function App() {
     setHighlights([])
     setQuoteTarget(null)
   }, [currentPage])
+
+  /**
+   * Hand back a cover for the library's hover preview. Imports render one up
+   * front, but documents added before covers existed - or opened on another
+   * machine - are rendered here, once, on the first look.
+   */
+  const requestCover = useCallback(async (id: string): Promise<string | null> => {
+    const cached = coverUrls.current.get(id)
+    if (cached) return cached
+
+    let blob = await db.getThumb(id)
+    if (!blob) {
+      const record = await db.getDoc(id)
+      if (!record) return null
+      const task = loadPdf(await record.blob.arrayBuffer())
+      try {
+        blob = (await renderCover(await task.promise)) ?? undefined
+        if (blob) await db.putThumb(id, blob)
+      } catch (cause) {
+        console.error('表紙を作れませんでした', cause)
+        return null
+      } finally {
+        await task.destroy().catch(() => {})
+      }
+    }
+    if (!blob) return null
+
+    const url = URL.createObjectURL(blob)
+    coverUrls.current.set(id, url)
+    return url
+  }, [])
 
   /* ------------------------------------------------------ library metadata */
 
@@ -509,6 +560,9 @@ export default function App() {
 
   const removeDoc = useCallback(
     async (id: string) => {
+      const cover = coverUrls.current.get(id)
+      if (cover) URL.revokeObjectURL(cover)
+      coverUrls.current.delete(id)
       await db.deleteDoc(id)
       setDocs(await db.listDocs())
       if (active?.doc.id === id) closeDoc()
@@ -680,6 +734,7 @@ export default function App() {
         onRenameDoc={renameDoc}
         onToggleTag={toggleTag}
         onCreateTag={createTag}
+        onRequestCover={requestCover}
         onConnectVault={connectVault}
         onUnlockVault={unlockVault}
         onDisconnectVault={disconnectVault}
