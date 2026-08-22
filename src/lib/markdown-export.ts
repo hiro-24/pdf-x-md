@@ -1,4 +1,4 @@
-import type { DocSummary, Highlight, Note } from '../types'
+import type { Bookmark, DocSummary, Highlight, Note } from '../types'
 
 const quote = (text: string) =>
   text
@@ -7,10 +7,21 @@ const quote = (text: string) =>
     .join('\n')
 
 /** Flatten a document's notes and highlights into one readable Markdown file. */
-export function toMarkdown(doc: DocSummary, notes: Note[], highlights: Highlight[]): string {
+export function toMarkdown(
+  doc: DocSummary,
+  notes: Note[],
+  highlights: Highlight[],
+  bookmarks: Bookmark[] = [],
+): string {
   const pages = [...new Set([...notes.map((n) => n.page), ...highlights.map((h) => h.page)])].sort((a, b) => a - b)
 
-  const out: string[] = [`# ${doc.name.replace(/\.pdf$/i, '')}`, '']
+  const out: string[] = [`# ${doc.title?.trim() || doc.name.replace(/\.pdf$/i, '')}`, '']
+
+  if (bookmarks.length) {
+    out.push('## しおり', '')
+    for (const mark of bookmarks) out.push(`- p.${mark.page}${mark.label ? ` — ${mark.label}` : ''}`)
+    out.push('')
+  }
 
   for (const page of pages) {
     out.push(`## p.${page}`, '')

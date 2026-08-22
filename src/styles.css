@@ -1381,3 +1381,98 @@ tr:hover .tag-cell__add {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* -------------------------------------------------------------- bookmarks */
+
+.lane__mark {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.panel__section {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.panel__marks {
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel__marks .panel__empty {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.panel__marks kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.mark__page {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.mark__page:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.mark__label {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.mark__label:hover {
+  border-color: var(--border);
+}
+
+.mark__label:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.mark__remove {
+  flex: none;
+  padding: 0 4px;
+  color: transparent;
+}
+
+.mark:hover .mark__remove {
+  color: var(--muted);
+}
+
+.mark__remove:hover {
+  color: #c2412d;
+}

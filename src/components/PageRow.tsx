@@ -11,6 +11,7 @@ interface Props {
   pinPage: boolean
   notes: Note[]
   highlights: Highlight[]
+  bookmarked: boolean
   fallbackSize: { width: number; height: number }
   autoFocusNoteId: string | null
   /** Set when a quote is bound for a note on this page. */
@@ -31,7 +32,8 @@ interface Props {
 const PRERENDER_MARGIN = 1200
 
 function PageRow(props: Props) {
-  const { pdf, pageNumber, scale, pinPage, notes, highlights, fallbackSize, autoFocusNoteId, quoteTarget } = props
+  const { pdf, pageNumber, scale, pinPage, notes, highlights, bookmarked, fallbackSize, autoFocusNoteId, quoteTarget } =
+    props
   const rowRef = useRef<HTMLElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
@@ -99,6 +101,11 @@ function PageRow(props: Props) {
           />
           <div className="lane__foot">
             <span className="page-num">p.{pageNumber}</span>
+            {bookmarked && (
+              <span className="lane__mark" title="しおりを挟んだページ">
+                🔖
+              </span>
+            )}
             {notes.length > 0 && (
               <button type="button" className="peek" onClick={() => scrollLane(1)}>
                 メモ {notes.length} 件 →

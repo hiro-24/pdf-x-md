@@ -1,4 +1,4 @@
-import type { DocSummary, Highlight, Note, Tag } from '../types'
+import type { Bookmark, DocSummary, Highlight, Note, Tag } from '../types'
 
 /**
  * The portable form of a document's annotations: what gets written to the sync
@@ -21,11 +21,18 @@ export interface Bundle {
   }
   notes: Omit<Note, 'docId'>[]
   highlights: Omit<Highlight, 'docId'>[]
+  /** Optional: bundles written before bookmarks existed simply don't have it. */
+  bookmarks?: Omit<Bookmark, 'docId'>[]
 }
 
 export const BUNDLE_VERSION = 1
 
-export function toBundle(doc: DocSummary, notes: Note[], highlights: Highlight[]): Bundle {
+export function toBundle(
+  doc: DocSummary,
+  notes: Note[],
+  highlights: Highlight[],
+  bookmarks: Bookmark[] = [],
+): Bundle {
   return {
     app: 'pdf-note-app',
     version: BUNDLE_VERSION,
@@ -40,14 +47,16 @@ export function toBundle(doc: DocSummary, notes: Note[], highlights: Highlight[]
     },
     notes: notes.map(({ docId: _docId, ...note }) => note),
     highlights: highlights.map(({ docId: _docId, ...highlight }) => highlight),
+    bookmarks: bookmarks.map(({ docId: _docId, ...mark }) => mark),
   }
 }
 
 /** Newest edit the bundle contains, for deciding which side of a sync wins. */
-export function stampOf(notes: Note[], highlights: Highlight[]): number {
+export function stampOf(notes: Note[], highlights: Highlight[], bookmarks: Bookmark[] = []): number {
   let latest = 0
   for (const note of notes) latest = Math.max(latest, note.updatedAt)
   for (const highlight of highlights) latest = Math.max(latest, highlight.createdAt)
+  for (const mark of bookmarks) latest = Math.max(latest, mark.createdAt)
   return latest
 }
 
@@ -67,10 +76,14 @@ export function parseBundle(text: string): Bundle {
 
 /** Re-attach a bundle to a document in this browser. Note ids are kept: they are
  *  uuids, so re-importing the same bundle twice overwrites rather than duplicates. */
-export function adoptBundle(bundle: Bundle, docId: string): { notes: Note[]; highlights: Highlight[] } {
+export function adoptBundle(
+  bundle: Bundle,
+  docId: string,
+): { notes: Note[]; highlights: Highlight[]; bookmarks: Bookmark[] } {
   return {
     notes: bundle.notes.map((note) => ({ ...note, docId })),
     highlights: bundle.highlights.map((highlight) => ({ ...highlight, docId })),
+    bookmarks: (bundle.bookmarks ?? []).map((mark) => ({ ...mark, docId })),
   }
 }
 

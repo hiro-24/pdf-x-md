@@ -70,6 +70,21 @@ export interface Highlight {
   createdAt: number
 }
 
+/**
+ * A place the reader deliberately marked. Distinct from `DocRecord.lastPage`,
+ * which just follows the scroll: a document has one last position but any
+ * number of bookmarks, and these survive reading past them.
+ */
+export interface Bookmark {
+  id: string
+  docId: string
+  /** 1-based page. */
+  page: number
+  /** Optional name. Empty means the list just shows the page number. */
+  label: string
+  createdAt: number
+}
+
 export interface DocBundle {
   doc: DocSummary
   notes: Note[]

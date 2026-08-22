@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { DocRecord, DocSummary, Highlight, Note, Tag } from './types'
+import type { Bookmark, DocRecord, DocSummary, Highlight, Note, Tag } from './types'
 
 interface Schema extends DBSchema {
   docs: {
@@ -23,6 +23,11 @@ interface Schema extends DBSchema {
     key: string
     value: unknown
   }
+  bookmarks: {
+    key: string
+    value: Bookmark
+    indexes: { 'by-doc': string }
+  }
   /** Cover images, keyed by document id. Kept out of `docs` so that listing the
    *  library doesn't drag a pile of bitmaps along with it. */
   thumbs: {
@@ -32,7 +37,7 @@ interface Schema extends DBSchema {
 }
 
 const DB_NAME = 'pdf-note-app'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null
 
@@ -54,6 +59,9 @@ function db() {
       }
       if (oldVersion < 3) {
         database.createObjectStore('thumbs')
+      }
+      if (oldVersion < 4) {
+        database.createObjectStore('bookmarks', { keyPath: 'id' }).createIndex('by-doc', 'docId')
       }
     },
   })
@@ -125,13 +133,15 @@ export async function matchDoc(
 export async function deleteDoc(id: string): Promise<void> {
   const database = await db()
   await database.delete('thumbs', id)
-  const tx = database.transaction(['docs', 'notes', 'highlights'], 'readwrite')
+  const tx = database.transaction(['docs', 'notes', 'highlights', 'bookmarks'], 'readwrite')
   const noteIds = await tx.objectStore('notes').index('by-doc').getAllKeys(id)
   const highlightIds = await tx.objectStore('highlights').index('by-doc').getAllKeys(id)
+  const bookmarkIds = await tx.objectStore('bookmarks').index('by-doc').getAllKeys(id)
   await Promise.all([
     tx.objectStore('docs').delete(id),
     ...noteIds.map((key) => tx.objectStore('notes').delete(key)),
     ...highlightIds.map((key) => tx.objectStore('highlights').delete(key)),
+    ...bookmarkIds.map((key) => tx.objectStore('bookmarks').delete(key)),
     tx.done,
   ])
 }
@@ -263,4 +273,27 @@ export async function putThumb(docId: string, blob: Blob): Promise<void> {
 
 export async function deleteThumb(docId: string): Promise<void> {
   await (await db()).delete('thumbs', docId)
+}
+
+/* --------------------------------------------------------------- bookmarks */
+
+export async function listBookmarks(docId: string): Promise<Bookmark[]> {
+  const marks = await (await db()).getAllFromIndex('bookmarks', 'by-doc', docId)
+  return marks.sort((a, b) => a.page - b.page || a.createdAt - b.createdAt)
+}
+
+export async function putBookmark(mark: Bookmark): Promise<void> {
+  await (await db()).put('bookmarks', mark)
+}
+
+export async function deleteBookmark(id: string): Promise<void> {
+  await (await db()).delete('bookmarks', id)
+}
+
+export async function replaceBookmarks(docId: string, marks: Bookmark[]): Promise<void> {
+  const database = await db()
+  const tx = database.transaction('bookmarks', 'readwrite')
+  const stale = await tx.store.index('by-doc').getAllKeys(docId)
+  await Promise.all(stale.map((key) => tx.store.delete(key)))
+  await Promise.all([...marks.map((mark) => tx.store.put(mark)), tx.done])
 }

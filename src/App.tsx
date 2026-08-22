@@ -16,7 +16,7 @@ import {
   writePalette,
 } from './lib/vault'
 import { renderCover } from './lib/thumbnail'
-import { TAG_COLORS, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
+import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
 /** Where the sync folder handle lives between sessions. */
 const VAULT_KEY = 'vault-dir'
@@ -123,6 +123,7 @@ export default function App() {
   const [active, setActive] = useState<Active | null>(null)
   const [notes, setNotes] = useState<Note[]>([])
   const [highlights, setHighlights] = useState<Highlight[]>([])
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -222,7 +223,11 @@ export default function App() {
   const present = useCallback(
     async (doc: DocSummary, pdf: PDFDocument) => {
     let effective = doc
-    let [loadedNotes, loadedHighlights] = await Promise.all([db.listNotes(doc.id), db.listHighlights(doc.id)])
+    let [loadedNotes, loadedHighlights, loadedMarks] = await Promise.all([
+      db.listNotes(doc.id),
+      db.listHighlights(doc.id),
+      db.listBookmarks(doc.id),
+    ])
 
     // The sync folder is the copy that outlives this browser profile. If it holds
     // work newer than what IndexedDB has - another machine, or site data cleared
@@ -230,11 +235,13 @@ export default function App() {
     if (vaultDir && vaultStatus === 'ready') {
       try {
         const stored = await findBundle(vaultDir, doc.fingerprint ?? null, doc.name)
-        if (stored && stored.savedAt > stampOf(loadedNotes, loadedHighlights)) {
+        if (stored && stored.savedAt > stampOf(loadedNotes, loadedHighlights, loadedMarks)) {
           const adopted = adoptBundle(stored, doc.id)
           loadedNotes = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
           loadedHighlights = adopted.highlights
+          loadedMarks = adopted.bookmarks.sort((a, b) => a.page - b.page)
           await db.replaceAnnotations(doc.id, loadedNotes, loadedHighlights)
+          await db.replaceBookmarks(doc.id, loadedMarks)
           effective = {
             ...doc,
             lastPage: stored.doc.lastPage || doc.lastPage,
@@ -263,6 +270,7 @@ export default function App() {
 
     setNotes(loadedNotes)
     setHighlights(loadedHighlights)
+    setBookmarks(loadedMarks)
 
     const first = await pdf.getPage(1)
     const base = first.getViewport({ scale: 1 })
@@ -390,6 +398,7 @@ export default function App() {
     })
     setNotes([])
     setHighlights([])
+    setBookmarks([])
     setQuoteTarget(null)
   }, [currentPage])
 
@@ -544,13 +553,17 @@ export default function App() {
     if (!active || !vaultDir || vaultStatus !== 'ready') return
     const timer = setTimeout(() => {
       const doc = { ...active.doc, lastPage: currentPageRef.current }
-      writeBundle(vaultDir, toBundle(doc, notes, highlights), toMarkdown(doc, notes, highlights)).catch((cause) => {
+      writeBundle(
+        vaultDir,
+        toBundle(doc, notes, highlights, bookmarks),
+        toMarkdown(doc, notes, highlights, bookmarks),
+      ).catch((cause) => {
         console.error('同期フォルダに書けませんでした', cause)
         setVaultStatus('blocked')
       })
     }, 1200)
     return () => clearTimeout(timer)
-  }, [active, notes, highlights, vaultDir, vaultStatus])
+  }, [active, notes, highlights, bookmarks, vaultDir, vaultStatus])
 
   /* ------------------------------------------------------ backup / restore */
 
@@ -558,8 +571,8 @@ export default function App() {
     if (!active) return
     const doc = { ...active.doc, lastPage: currentPageRef.current }
     const name = `${doc.name.replace(/\.pdf$/i, '')}.notes.json`
-    download(name, JSON.stringify(toBundle(doc, notes, highlights), null, 2), 'application/json')
-  }, [active, notes, highlights])
+    download(name, JSON.stringify(toBundle(doc, notes, highlights, bookmarks), null, 2), 'application/json')
+  }, [active, notes, highlights, bookmarks])
 
   const importJson = useCallback(
     async (file: File) => {
@@ -567,13 +580,15 @@ export default function App() {
       setError(null)
       try {
         const bundle = parseBundle(await file.text())
-        const count = bundle.notes.length + bundle.highlights.length
+        const count = bundle.notes.length + bundle.highlights.length + (bundle.bookmarks?.length ?? 0)
         if (!confirm(`「${active.doc.name}」のメモとハイライトを、このファイルの内容（${count} 件）で置き換えます。よろしいですか？`)) return
         const adopted = adoptBundle(bundle, active.doc.id)
         const restored = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
         await db.replaceAnnotations(active.doc.id, restored, adopted.highlights)
+        await db.replaceBookmarks(active.doc.id, adopted.bookmarks)
         setNotes(restored)
         setHighlights(adopted.highlights)
+        setBookmarks(adopted.bookmarks.sort((a, b) => a.page - b.page))
       } catch (cause) {
         console.error(cause)
         setError(cause instanceof Error ? cause.message : 'バックアップを読み込めませんでした')
@@ -729,6 +744,45 @@ export default function App() {
     [notes, addNote],
   )
 
+  /* -------------------------------------------------------------- bookmarks */
+
+  /** Drop a bookmark on this page, or lift the one already there. */
+  const toggleBookmark = useCallback(
+    (page: number) => {
+      if (!active) return
+      const existing = bookmarks.find((mark) => mark.page === page)
+      if (existing) {
+        setBookmarks((current) => current.filter((mark) => mark.id !== existing.id))
+        db.deleteBookmark(existing.id).catch(console.error)
+        return
+      }
+      const mark: Bookmark = {
+        id: uid(),
+        docId: active.doc.id,
+        page,
+        label: '',
+        createdAt: Date.now(),
+      }
+      setBookmarks((current) => [...current, mark].sort((a, b) => a.page - b.page))
+      db.putBookmark(mark).catch(console.error)
+    },
+    [active, bookmarks],
+  )
+
+  const labelBookmark = useCallback((id: string, label: string) => {
+    setBookmarks((current) => {
+      const next = current.map((mark) => (mark.id === id ? { ...mark, label } : mark))
+      const updated = next.find((mark) => mark.id === id)
+      if (updated) db.putBookmark(updated).catch(console.error)
+      return next
+    })
+  }, [])
+
+  const removeBookmark = useCallback((id: string) => {
+    setBookmarks((current) => current.filter((mark) => mark.id !== id))
+    db.deleteBookmark(id).catch(console.error)
+  }, [])
+
   /* ------------------------------------------------------------- highlights */
 
   const createHighlight = useCallback(
@@ -793,6 +847,9 @@ export default function App() {
       if (event.key === 'n') {
         event.preventDefault()
         addNote(currentPage)
+      } else if (event.key === 'b') {
+        event.preventDefault()
+        toggleBookmark(currentPage)
       } else if (event.key === 'j') {
         jumpTo(Math.min(active.doc.pageCount, currentPage + 1))
       } else if (event.key === 'k') {
@@ -801,7 +858,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, currentPage, addNote, jumpTo])
+  }, [active, currentPage, addNote, jumpTo, toggleBookmark])
 
   /* ----------------------------------------------------------------- render */
 
@@ -835,6 +892,8 @@ export default function App() {
   const annotatedPages = [...new Set([...notes.map((n) => n.page), ...highlights.map((h) => h.page)])].sort(
     (a, b) => a - b,
   )
+  const bookmarkedPages = new Set(bookmarks.map((mark) => mark.page))
+  const marked = bookmarkedPages.has(currentPage)
 
   return (
     <div className="app">
@@ -903,6 +962,15 @@ export default function App() {
           ＋ メモ
         </button>
 
+        <button
+          type="button"
+          className={marked ? 'is-on' : ''}
+          onClick={() => toggleBookmark(currentPage)}
+          title={marked ? `p.${currentPage} のしおりを外す (b)` : `p.${currentPage} にしおりを挟む (b)`}
+        >
+          {marked ? '🔖' : '🏷'} しおり
+        </button>
+
         <div className="toolbar__menu">
           <button
             type="button"
@@ -922,7 +990,7 @@ export default function App() {
                     setMenuOpen(false)
                     download(
                       `${active.doc.name.replace(/\.pdf$/i, '')}.md`,
-                      toMarkdown(active.doc, notes, highlights),
+                      toMarkdown(active.doc, notes, highlights, bookmarks),
                     )
                   }}
                 >
@@ -966,7 +1034,7 @@ export default function App() {
         />
 
         <button type="button" className={panelOpen ? 'is-on' : ''} onClick={() => setPanelOpen((value) => !value)}>
-          メモ一覧 ({annotatedPages.length})
+          しおり・メモ ({bookmarks.length + annotatedPages.length})
         </button>
       </header>
 
@@ -980,6 +1048,7 @@ export default function App() {
             pinPage={pinPage}
             notes={notesByPage.get(page) ?? EMPTY}
             highlights={highlightsByPage.get(page) ?? EMPTY}
+            bookmarked={bookmarkedPages.has(page)}
             fallbackSize={pageSizes.current.get(page) ?? active.baseSize}
             autoFocusNoteId={autoFocusNoteId}
             quoteTarget={quoteTarget?.page === page ? { noteId: quoteTarget.noteId, quote: quoteTarget.quote } : null}
@@ -1000,12 +1069,38 @@ export default function App() {
       {panelOpen && (
         <aside className="panel">
           <header className="panel__head">
-            <strong>メモ一覧</strong>
+            <strong>しおりとメモ</strong>
             <button type="button" onClick={() => setPanelOpen(false)}>
               ✕
             </button>
           </header>
           <div className="panel__body">
+            <section className="panel__marks">
+              <h3 className="panel__section">しおり</h3>
+              {bookmarks.length === 0 && (
+                <p className="panel__empty">
+                  ツールバーの「しおり」か <kbd>b</kbd> で、読んでいるページに挟めます。
+                </p>
+              )}
+              {bookmarks.map((mark) => (
+                <div key={mark.id} className="mark">
+                  <button type="button" className="mark__page" onClick={() => jumpTo(mark.page)}>
+                    p.{mark.page}
+                  </button>
+                  <input
+                    className="mark__label"
+                    value={mark.label}
+                    placeholder="名前をつける"
+                    onChange={(event) => labelBookmark(mark.id, event.target.value)}
+                  />
+                  <button type="button" className="mark__remove" title="外す" onClick={() => removeBookmark(mark.id)}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </section>
+
+            <h3 className="panel__section">メモ・ハイライト</h3>
             {annotatedPages.length === 0 && <p className="panel__empty">まだメモもハイライトもありません。</p>}
             {annotatedPages.map((page) => (
               <section key={page} className="panel__page">
