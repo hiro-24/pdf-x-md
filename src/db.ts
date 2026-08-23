@@ -95,11 +95,18 @@ export async function putDoc(doc: DocRecord): Promise<void> {
   await (await db()).put('docs', doc)
 }
 
+/** Fields a sync has to date, so that a stale folder copy can't overwrite them. */
+const META_FIELDS = ['lastPage', 'title', 'tags'] as const
+
 export async function updateDoc(id: string, patch: Partial<Omit<DocRecord, 'id'>>): Promise<void> {
   const database = await db()
   const doc = await database.get('docs', id)
   if (!doc) return
-  await database.put('docs', { ...doc, ...patch })
+  // Stamp here rather than at every call site: forgetting one would silently
+  // let an older copy of the reading position win the next sync.
+  // An explicit `metaAt` in the patch is a stamp adopted from elsewhere; keep it.
+  const touchesMeta = patch.metaAt === undefined && META_FIELDS.some((field) => field in patch && patch[field] !== doc[field])
+  await database.put('docs', { ...doc, ...patch, ...(touchesMeta ? { metaAt: Date.now() } : {}) })
 }
 
 export async function touchDoc(id: string): Promise<void> {

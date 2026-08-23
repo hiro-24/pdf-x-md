@@ -23,6 +23,12 @@ export interface DocRecord {
   title?: string
   /** Tag names, not ids: names are what travel to another machine intact. */
   tags?: string[]
+  /**
+   * When `lastPage`, `title` or `tags` last changed on some machine. The notes
+   * carry their own timestamps; this is the one for everything else, so a sync
+   * can tell a fresh reading position from a stale copy of one.
+   */
+  metaAt?: number
 }
 
 export const TAG_COLORS = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const

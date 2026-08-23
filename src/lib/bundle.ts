@@ -18,6 +18,9 @@ export interface Bundle {
     title?: string
     /** Tag names. Colours live in the library palette, not in each document. */
     tags?: string[]
+    /** When this machine last changed lastPage/title/tags. Absent in bundles
+     *  written before the field existed, which then simply never win. */
+    metaAt?: number
   }
   notes: Omit<Note, 'docId'>[]
   highlights: Omit<Highlight, 'docId'>[]
@@ -44,6 +47,7 @@ export function toBundle(
       lastPage: doc.lastPage ?? 1,
       title: doc.title,
       tags: doc.tags ?? [],
+      metaAt: doc.metaAt ?? 0,
     },
     notes: notes.map(({ docId: _docId, ...note }) => note),
     highlights: highlights.map(({ docId: _docId, ...highlight }) => highlight),
@@ -51,13 +55,27 @@ export function toBundle(
   }
 }
 
-/** Newest edit the bundle contains, for deciding which side of a sync wins. */
-export function stampOf(notes: Note[], highlights: Highlight[], bookmarks: Bookmark[] = []): number {
+/** Newest edit in a set of annotations, for deciding which side of a sync wins. */
+export function stampOf(
+  notes: readonly { updatedAt: number }[],
+  highlights: readonly { createdAt: number }[],
+  bookmarks: readonly { createdAt: number }[] = [],
+): number {
   let latest = 0
   for (const note of notes) latest = Math.max(latest, note.updatedAt)
   for (const highlight of highlights) latest = Math.max(latest, highlight.createdAt)
   for (const mark of bookmarks) latest = Math.max(latest, mark.createdAt)
   return latest
+}
+
+/**
+ * The same measure taken from a bundle's own contents. Deliberately *not*
+ * `bundle.savedAt`: that records when the file was written, which is always a
+ * moment later than the edit it contains, so comparing it against a local edit
+ * time would hand every tie to the folder.
+ */
+export function bundleStamp(bundle: Bundle): number {
+  return stampOf(bundle.notes, bundle.highlights, bundle.bookmarks ?? [])
 }
 
 export function parseBundle(text: string): Bundle {

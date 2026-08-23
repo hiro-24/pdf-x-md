@@ -4,7 +4,7 @@ import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
 import * as db from './db'
 import { download, toMarkdown } from './lib/markdown-export'
-import { adoptBundle, mergePalettes, parseBundle, stampOf, toBundle, toPaletteFile } from './lib/bundle'
+import { adoptBundle, bundleStamp, mergePalettes, parseBundle, stampOf, toBundle, toPaletteFile } from './lib/bundle'
 import {
   findBundle,
   permissionState,
@@ -145,6 +145,8 @@ export default function App() {
   const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map())
   /** True while we are scrolling back to the remembered page on open. */
   const [restoring, setRestoring] = useState(false)
+  /** Page to announce as "resumed at", briefly, so the jump isn't a mystery. */
+  const [resumeHint, setResumeHint] = useState<number | null>(null)
 
   const pageSizes = useRef(new Map<number, Size>())
   const nonce = useRef(0)
@@ -154,6 +156,8 @@ export default function App() {
   const restoreTo = useRef<number | null>(null)
   /** Read by the folder writer, which must not re-run on every scroll. */
   const currentPageRef = useRef(1)
+  /** Newest local stamp on lastPage/title/tags, kept here for the same reason. */
+  const metaAtRef = useRef(0)
   const jsonInputRef = useRef<HTMLInputElement>(null)
   /** docId -> object URL for its cover, so a second hover is instant. */
   const coverUrls = useRef(new Map<string, string>())
@@ -235,23 +239,37 @@ export default function App() {
     if (vaultDir && vaultStatus === 'ready') {
       try {
         const stored = await findBundle(vaultDir, doc.fingerprint ?? null, doc.name)
-        if (stored && stored.savedAt > stampOf(loadedNotes, loadedHighlights, loadedMarks)) {
+
+        // Annotations are decided edit-against-edit. Weighing them against the
+        // file's `savedAt` would hand the folder every comparison: that stamp is
+        // written a beat *after* the edit it carries, and a document with no
+        // notes at all has no edit time to weigh at all.
+        if (stored && bundleStamp(stored) > stampOf(loadedNotes, loadedHighlights, loadedMarks)) {
           const adopted = adoptBundle(stored, doc.id)
           loadedNotes = adopted.notes.sort((a, b) => a.page - b.page || a.order - b.order)
           loadedHighlights = adopted.highlights
           loadedMarks = adopted.bookmarks.sort((a, b) => a.page - b.page)
           await db.replaceAnnotations(doc.id, loadedNotes, loadedHighlights)
           await db.replaceBookmarks(doc.id, loadedMarks)
+        }
+
+        // The reading position, title and tags run on their own clock - they
+        // change without a note being touched, and the folder only learns of
+        // them when something else triggers a write. So they get their own
+        // comparison, or reading on for an hour would be undone on reopening.
+        if (stored && (stored.doc.metaAt ?? 0) > (doc.metaAt ?? 0)) {
           effective = {
             ...doc,
             lastPage: stored.doc.lastPage || doc.lastPage,
             title: stored.doc.title || doc.title,
             tags: stored.doc.tags ?? doc.tags,
+            metaAt: stored.doc.metaAt,
           }
           await db.updateDoc(doc.id, {
             lastPage: effective.lastPage,
             title: effective.title,
             tags: effective.tags,
+            metaAt: effective.metaAt,
           })
           // Tags arriving from another machine need a colour here to show up.
           const known = await db.getTags()
@@ -277,10 +295,12 @@ export default function App() {
     pagesInBand.current.clear()
     pageSizes.current = new Map()
 
+    metaAtRef.current = effective.metaAt ?? 0
     const startPage = Math.min(Math.max(effective.lastPage ?? 1, 1), pdf.numPages)
     setCurrentPage(startPage)
     restoreTo.current = startPage > 1 ? startPage : null
     setRestoring(startPage > 1)
+    setResumeHint(startPage > 1 ? startPage : null)
     setQuoteTarget(null)
     setActive({ doc: effective, pdf, baseSize: { width: base.width, height: base.height } })
 
@@ -369,6 +389,7 @@ export default function App() {
           lastPage: 1,
           title,
           tags: [],
+          metaAt: Date.now(),
         }
         await db.putDoc({ ...doc, blob: file })
         // The document is already parsed here, so the cover is nearly free.
@@ -390,17 +411,36 @@ export default function App() {
     [present],
   )
 
+  /**
+   * Write the reading position out now instead of waiting on the debounces -
+   * the reader is leaving. The folder gets it too: its copy of the position is
+   * otherwise only as fresh as the last note edit, which is no use at all to
+   * the machine that picks the document up next.
+   */
+  const flushPosition = useCallback(() => {
+    if (!active) return
+    const at = Date.now()
+    metaAtRef.current = at
+    const doc = { ...active.doc, lastPage: currentPageRef.current, metaAt: at }
+    db.updateDoc(doc.id, { lastPage: doc.lastPage, metaAt: at }).catch(console.error)
+    if (vaultDir && vaultStatus === 'ready') {
+      writeBundle(
+        vaultDir,
+        toBundle(doc, notes, highlights, bookmarks),
+        toMarkdown(doc, notes, highlights, bookmarks),
+      ).catch((cause) => console.error('同期フォルダに書けませんでした', cause))
+    }
+  }, [active, notes, highlights, bookmarks, vaultDir, vaultStatus])
+
   const closeDoc = useCallback(() => {
-    setActive((current) => {
-      if (current) db.updateDoc(current.doc.id, { lastPage: currentPage }).catch(console.error)
-      current?.pdf.loadingTask.destroy().catch(() => {})
-      return null
-    })
+    flushPosition()
+    active?.pdf.loadingTask.destroy().catch(() => {})
+    setActive(null)
     setNotes([])
     setHighlights([])
     setBookmarks([])
     setQuoteTarget(null)
-  }, [currentPage])
+  }, [active, flushPosition])
 
   /**
    * Hand back a cover for the library's hover preview. Imports render one up
@@ -552,7 +592,7 @@ export default function App() {
   useEffect(() => {
     if (!active || !vaultDir || vaultStatus !== 'ready') return
     const timer = setTimeout(() => {
-      const doc = { ...active.doc, lastPage: currentPageRef.current }
+      const doc = { ...active.doc, lastPage: currentPageRef.current, metaAt: metaAtRef.current }
       writeBundle(
         vaultDir,
         toBundle(doc, notes, highlights, bookmarks),
@@ -621,28 +661,59 @@ export default function App() {
   useEffect(() => {
     const page = restoreTo.current
     if (!active || page == null) return
-    // Two frames: the first commits the rows, the second lays them out. The
-    // target is only cleared once the scroll actually runs - clearing it up here
-    // would make StrictMode's discarded first pass eat the restore.
-    const frame = requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
+
+    let frame = 0
+    let steady = 0
+    let previousTop = -1
+    const deadline = performance.now() + 2000
+    // Aiming once isn't enough. The rows are laid out at the old zoom for a
+    // frame or two while fit-to-window is computed, and every page is a little
+    // shorter than its final height, so a single jump lands short by that error
+    // times the page number - a page or two into a short PDF, far more into a
+    // long one. Re-aim each frame until the target stops moving.
+    const settle = () => {
+      const row = document.getElementById(`page-${page}`)
+      if (row) {
+        // Cleared only once a scroll has actually run: clearing it up front
+        // would let StrictMode's discarded first pass eat the restore.
         restoreTo.current = null
-        document.getElementById(`page-${page}`)?.scrollIntoView({ block: 'start' })
+        const top = Math.round(row.getBoundingClientRect().top + window.scrollY)
+        steady = top === previousTop ? steady + 1 : 0
+        previousTop = top
+        row.scrollIntoView({ block: 'start' })
         syncCurrentPage()
-        window.setTimeout(() => {
-          syncCurrentPage()
-          setRestoring(false)
-        }, 400)
-      }),
-    )
-    return () => cancelAnimationFrame(frame)
+      }
+      if (steady < 3 && performance.now() < deadline) frame = requestAnimationFrame(settle)
+      else stop()
+    }
+
+    // Whoever reaches for the wheel has overruled us; stop pulling them back.
+    const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
+    const stop = () => {
+      cancelAnimationFrame(frame)
+      restoreTo.current = null
+      setRestoring(false)
+      for (const name of events) window.removeEventListener(name, stop)
+    }
+    for (const name of events) window.addEventListener(name, stop, { passive: true })
+
+    frame = requestAnimationFrame(settle)
+    return stop
   }, [active, syncCurrentPage])
+
+  useEffect(() => {
+    if (resumeHint == null) return
+    const timer = setTimeout(() => setResumeHint(null), 5000)
+    return () => clearTimeout(timer)
+  }, [resumeHint])
 
   // Remember the page, but not the pages that flick past during the restore.
   useEffect(() => {
     if (!active || restoring) return
     const timer = setTimeout(() => {
-      db.updateDoc(active.doc.id, { lastPage: currentPage }).catch(console.error)
+      const at = Date.now()
+      metaAtRef.current = at
+      db.updateDoc(active.doc.id, { lastPage: currentPage, metaAt: at }).catch(console.error)
     }, 800)
     return () => clearTimeout(timer)
   }, [active, currentPage, restoring])
@@ -651,13 +722,11 @@ export default function App() {
   useEffect(() => {
     if (!active) return
     const flush = () => {
-      if (document.visibilityState === 'hidden') {
-        db.updateDoc(active.doc.id, { lastPage: currentPage }).catch(console.error)
-      }
+      if (document.visibilityState === 'hidden') flushPosition()
     }
     document.addEventListener('visibilitychange', flush)
     return () => document.removeEventListener('visibilitychange', flush)
-  }, [active, currentPage])
+  }, [active, flushPosition])
 
   const removeDoc = useCallback(
     async (id: string) => {
@@ -833,9 +902,16 @@ export default function App() {
   const notesByPage = useGroupedByPage(notes)
   const highlightsByPage = useGroupedByPage(highlights)
 
-  const jumpTo = useCallback((page: number) => {
-    document.getElementById(`page-${page}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [])
+  const jumpTo = useCallback(
+    (page: number) => {
+      // Gliding to the next page keeps your bearings. Gliding across thirty of
+      // them just makes you watch the pages you skipped, so those jump outright.
+      const behavior: ScrollBehavior = Math.abs(page - currentPageRef.current) > 3 ? 'auto' : 'smooth'
+      document.getElementById(`page-${page}`)?.scrollIntoView({ behavior, block: 'start' })
+      requestAnimationFrame(syncCurrentPage)
+    },
+    [syncCurrentPage],
+  )
 
   useEffect(() => {
     if (!active) return
@@ -1065,6 +1141,23 @@ export default function App() {
           />
         ))}
       </main>
+
+      {resumeHint != null && (
+        <div className="resume" role="status">
+          <span>
+            前回の続き <strong>p.{resumeHint}</strong> から開きました
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setResumeHint(null)
+              jumpTo(1)
+            }}
+          >
+            先頭へ
+          </button>
+        </div>
+      )}
 
       {panelOpen && (
         <aside className="panel">
