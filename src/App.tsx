@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Library from './components/Library'
 import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
 import * as db from './db'
+import { laneOffset } from './lib/lane'
 import { download, toMarkdown } from './lib/markdown-export'
 import { adoptBundle, bundleStamp, mergePalettes, parseBundle, stampOf, toBundle, toPaletteFile } from './lib/bundle'
 import {
@@ -20,6 +21,14 @@ import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type Highli
 
 /** Where the sync folder handle lives between sessions. */
 const VAULT_KEY = 'vault-dir'
+/** Whether the page stays put while notes scroll past it. */
+const PIN_KEY = 'pin-page'
+/** Below this there is no point pinning: the note would have nowhere to sit. */
+const MIN_NOTE_WIDTH = 300
+/** The pinned lane's own gutters: padding 24 + 20, less the -20 margin, plus the
+ *  track's 20px gap. Adding them to the page width gives the width a note has
+ *  to start clear of. */
+const PIN_GUTTERS = 44
 
 type VaultStatus = 'unsupported' | 'off' | 'blocked' | 'ready'
 
@@ -130,7 +139,9 @@ export default function App() {
   const [zoomIndex, setZoomIndex] = useState(3)
   const [fitMode, setFitMode] = useState<FitMode>('page')
   const [fitScale, setFitScale] = useState(1)
-  const [pinPage, setPinPage] = useState(false)
+  // On by default: notes are read *against* the page, and letting the page
+  // scroll away turns the lane into a plain list of notes with no subject.
+  const [pinPage, setPinPage] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [panelOpen, setPanelOpen] = useState(false)
   const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null)
@@ -169,6 +180,7 @@ export default function App() {
   useEffect(() => {
     db.listDocs().then(setDocs).catch(console.error)
     db.getTags().then(setPalette).catch(console.error)
+    db.getSetting<boolean>(PIN_KEY).then((value) => value !== undefined && setPinPage(value), console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
     if (!vaultSupported) return
@@ -186,6 +198,13 @@ export default function App() {
   useEffect(() => {
     currentPageRef.current = currentPage
   }, [currentPage])
+
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
+  useEffect(() => {
+    const update = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   const covers = coverUrls.current
   useEffect(() => () => covers.forEach((url) => URL.revokeObjectURL(url)), [covers])
@@ -759,9 +778,13 @@ export default function App() {
       setAutoFocusNoteId(note.id)
       db.putNote(note).catch(console.error)
       // Bring the new card into view; the row's track has to catch up first.
+      // Aim at the card rather than at the end of the track: with the page
+      // pinned, the far end can leave the new note sitting behind it.
       requestAnimationFrame(() => {
         const track = document.querySelector<HTMLElement>(`#page-${page} .row__track`)
-        track?.scrollTo({ left: track.scrollWidth, behavior: 'smooth' })
+        const lanes = track?.querySelectorAll<HTMLElement>('.lane--note')
+        const fresh = lanes?.[lanes.length - 1]
+        if (track && fresh) track.scrollTo({ left: laneOffset(track, fresh), behavior: 'smooth' })
       })
       return note
     },
@@ -971,6 +994,12 @@ export default function App() {
   const bookmarkedPages = new Set(bookmarks.map((mark) => mark.page))
   const marked = bookmarkedPages.has(currentPage)
 
+  const pdfLane = Math.round(active.baseSize.width * scale) + PIN_GUTTERS
+  // Pinning is only a kindness while a note still fits beside the page. Past
+  // that it would hide the notes behind the page, which is the same complaint
+  // from the other side, so a very narrow window gets the sliding lane back.
+  const pinned = pinPage && viewportWidth - pdfLane >= MIN_NOTE_WIDTH
+
   return (
     <div className="app">
       <header className="toolbar">
@@ -1027,8 +1056,13 @@ export default function App() {
 
         <button
           type="button"
-          className={pinPage ? 'is-on' : ''}
-          onClick={() => setPinPage((value) => !value)}
+          className={pinned ? 'is-on' : ''}
+          onClick={() =>
+            setPinPage((value) => {
+              void db.setSetting(PIN_KEY, !value).catch(console.error)
+              return !value
+            })
+          }
           title="横スクロール中もページを左端に固定する"
         >
           ページ固定
@@ -1114,14 +1148,17 @@ export default function App() {
         </button>
       </header>
 
-      <main className="pages">
+      <main
+        className="pages"
+        style={{ '--pdf-lane': `${pdfLane}px` } as CSSProperties}
+      >
         {Array.from({ length: active.doc.pageCount }, (_, index) => index + 1).map((page) => (
           <PageRow
             key={page}
             pdf={active.pdf}
             pageNumber={page}
             scale={scale}
-            pinPage={pinPage}
+            pinPage={pinned}
             notes={notesByPage.get(page) ?? EMPTY}
             highlights={highlightsByPage.get(page) ?? EMPTY}
             bookmarked={bookmarkedPages.has(page)}

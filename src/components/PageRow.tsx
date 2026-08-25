@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import PdfPage from './PdfPage'
 import NoteCard, { type PendingQuote } from './NoteCard'
+import { laneOffset } from '../lib/lane'
 import type { PDFDocument } from '../pdf'
 import type { Highlight, HighlightColor, Note, Rect } from '../types'
 
@@ -76,10 +77,23 @@ function PageRow(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber])
 
+  /**
+   * Step to the next note rather than by a fixed distance. A fixed step has to
+   * guess how much of the track the reader can actually see, and beside a
+   * pinned page that guess is wrong by the width of the page - it lands you on
+   * a note that is half behind it.
+   */
   const scrollLane = (direction: -1 | 1) => {
     const track = trackRef.current
     if (!track) return
-    track.scrollBy({ left: direction * track.clientWidth * 0.85, behavior: 'smooth' })
+    const stops = [...track.querySelectorAll<HTMLElement>('.lane--note, .lane--add')].map((lane) =>
+      laneOffset(track, lane),
+    )
+    const next =
+      direction > 0
+        ? stops.find((left) => left > track.scrollLeft + 1)
+        : [...stops].reverse().find((left) => left < track.scrollLeft - 1)
+    track.scrollTo({ left: next ?? (direction > 0 ? track.scrollWidth : 0), behavior: 'smooth' })
   }
 
   return (

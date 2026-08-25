@@ -305,9 +305,11 @@ button {
   margin-left: 24px;
 }
 
-/* "ページ固定": the page stays put while the notes slide past it. The gutter
-   moves from margin to padding so the lane's own opaque box reaches the edge of
-   the scrollport - otherwise notes show through beside the pinned page. */
+/* "ページ固定" (the default): the page stays put while the notes slide past it.
+   The gutter moves from margin to padding so the lane's own opaque box reaches
+   the edge of the scrollport - otherwise notes show through beside the pinned
+   page. `--pdf-lane` is the width it occupies, set on .pages from the current
+   zoom; everything that has to stay clear of the page is measured from it. */
 .row__track.is-pinned .lane--pdf {
   position: sticky;
   left: 0;
@@ -319,8 +321,20 @@ button {
   box-shadow: 14px 0 18px -14px rgb(0 0 0 / 0.28);
 }
 
+/* Without this a note snaps to the scrollport's left edge, which is behind the
+   pinned page - you scroll to a note and land on a card you can't see. */
+.row__track.is-pinned {
+  scroll-padding-left: var(--pdf-lane, 24px);
+}
+
 .lane--note {
   width: min(560px, 82vw);
+}
+
+/* Beside a pinned page a note takes what is left, so that a note and the page
+   it belongs to are on screen together rather than one pushing out the other. */
+.row__track.is-pinned .lane--note {
+  width: clamp(280px, calc(100vw - var(--pdf-lane, 0px) - 44px), 560px);
 }
 
 .lane--add {
