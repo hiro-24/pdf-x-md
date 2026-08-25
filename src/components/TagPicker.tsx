@@ -4,6 +4,10 @@ import { TAG_COLORS, type Tag, type TagColor } from '../types'
 
 const WIDTH = 244
 const MAX_HEIGHT = 340
+/** The colour grid's own size, kept in step with .colorgrid in the stylesheet:
+ *  five 18px dots with 6px gaps, 8px of padding and a 1px border. */
+const GRID_WIDTH = 132
+const GRID_HEIGHT = 60
 
 /** Stands in for the not-yet-created tag when its colour is being chosen. */
 const DRAFT = '\u0000draft'
@@ -21,10 +25,29 @@ interface Props {
   onClose: () => void
 }
 
-/** The nine colours, as a row of dots. */
-function ColorGrid({ current, onPick }: { current: TagColor; onPick: (color: TagColor) => void }) {
+/**
+ * The nine colours, as a row of dots.
+ *
+ * Positioned against the viewport rather than against its row. The list of tags
+ * scrolls, and an absolutely placed grid is clipped by that scroll box: for any
+ * tag past the first few, clicking the swatch drew the grid somewhere you could
+ * neither see nor click, which reads as the colours simply not being changeable.
+ */
+function ColorGrid({
+  anchor,
+  current,
+  onPick,
+}: {
+  anchor: DOMRect
+  current: TagColor
+  onPick: (color: TagColor) => void
+}) {
+  const left = Math.max(8, Math.min(anchor.right - GRID_WIDTH, window.innerWidth - GRID_WIDTH - 8))
+  const room = window.innerHeight - anchor.bottom
+  const top = room < GRID_HEIGHT + 8 ? anchor.top - GRID_HEIGHT - 4 : anchor.bottom + 4
+
   return (
-    <div className="colorgrid">
+    <div className="colorgrid" style={{ left, top }}>
       {TAG_COLORS.map((color) => (
         <button
           key={color}
@@ -47,8 +70,9 @@ function nextColor(palette: Tag[]): TagColor {
 
 export default function TagPicker({ anchor, palette, applied, onToggle, onCreate, onRecolor, onClose }: Props) {
   const [query, setQuery] = useState('')
-  /** Which tag's colour grid is open; DRAFT means the one being created. */
-  const [editingColor, setEditingColor] = useState<string | null>(null)
+  /** Whose colour grid is open, and the swatch it hangs off. DRAFT means the
+   *  tag being created. */
+  const [colorFor, setColorFor] = useState<{ name: string; anchor: DOMRect } | null>(null)
   const [draftColor, setDraftColor] = useState<TagColor | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -66,6 +90,19 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
     return () => document.removeEventListener('mousedown', onDown)
   }, [onClose])
 
+  // On the document, not on the search box: once you have clicked a swatch or
+  // the create button the box no longer has focus, and Escape did nothing.
+  // It backs out one layer at a time - the colour grid first, then the menu.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (colorFor) setColorFor(null)
+      else onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [colorFor, onClose])
+
   const trimmed = query.trim()
   const matches = useMemo(
     () => palette.filter((tag) => tag.name.toLowerCase().includes(trimmed.toLowerCase())),
@@ -82,8 +119,12 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
     onToggle(trimmed)
     setQuery('')
     setDraftColor(null)
-    setEditingColor(null)
+    setColorFor(null)
   }
+
+  /** Reopening on the same swatch closes it; on another, moves there. */
+  const toggleGrid = (name: string, swatch: HTMLElement) =>
+    setColorFor((current) => (current?.name === name ? null : { name, anchor: swatch.getBoundingClientRect() }))
 
   // The table scrolls, so an absolutely positioned menu would be clipped by it.
   // Fixed coordinates in a portal keep the menu out of every ancestor's box.
@@ -103,7 +144,6 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
         placeholder="タグを検索、または新規作成"
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose()
           if (event.key === 'Enter') {
             event.preventDefault()
             if (trimmed && !exact) create()
@@ -112,7 +152,9 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
         }}
       />
 
-      <div className="tagpicker__list">
+      {/* The grid is placed from a rect taken when it opened, so scrolling the
+          list out from under it would leave it stranded. */}
+      <div className="tagpicker__list" onScroll={() => setColorFor(null)}>
         {matches.map((tag) => (
           <div key={tag.name} className="tagpicker__row">
             <label className="tagpicker__item">
@@ -123,14 +165,15 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
               type="button"
               className={`dot dot--${tag.color} dot--pick`}
               title="色を変える"
-              onClick={() => setEditingColor(editingColor === tag.name ? null : tag.name)}
+              onClick={(event) => toggleGrid(tag.name, event.currentTarget)}
             />
-            {editingColor === tag.name && (
+            {colorFor?.name === tag.name && (
               <ColorGrid
+                anchor={colorFor.anchor}
                 current={tag.color}
                 onPick={(color) => {
                   onRecolor(tag.name, color)
-                  setEditingColor(null)
+                  setColorFor(null)
                 }}
               />
             )}
@@ -148,14 +191,15 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
             type="button"
             className={`dot dot--${newColor} dot--pick`}
             title="作成する色を選ぶ"
-            onClick={() => setEditingColor(editingColor === DRAFT ? null : DRAFT)}
+            onClick={(event) => toggleGrid(DRAFT, event.currentTarget)}
           />
-          {editingColor === DRAFT && (
+          {colorFor?.name === DRAFT && (
             <ColorGrid
+              anchor={colorFor.anchor}
               current={newColor}
               onPick={(color) => {
                 setDraftColor(color)
-                setEditingColor(null)
+                setColorFor(null)
               }}
             />
           )}

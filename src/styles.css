@@ -1366,11 +1366,12 @@ tr:hover .tag-cell__add {
   transform: scale(1.15);
 }
 
+/* Fixed, not absolute: the tag list is a scroll box, and an absolute grid is
+   clipped away by it for every tag but the first few. Coordinates come from the
+   swatch that opened it (see ColorGrid). */
 .colorgrid {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 2;
+  position: fixed;
+  z-index: 110;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
