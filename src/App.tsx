@@ -25,10 +25,15 @@ const VAULT_KEY = 'vault-dir'
 const PIN_KEY = 'pin-page'
 /** Below this there is no point pinning: the note would have nowhere to sit. */
 const MIN_NOTE_WIDTH = 300
-/** The pinned lane's own gutters: padding 24 + 20, less the -20 margin, plus the
- *  track's 20px gap. Adding them to the page width gives the width a note has
- *  to start clear of. */
-const PIN_GUTTERS = 44
+/** Breathing room between the page and the first note lane. */
+const PAGE_TRAIL = 20
+/** How far in from the window's left edge the page sits, and the least it ever
+ *  gets. The inset is half of whatever a full note leaves over, so a wide window
+ *  doesn't strand the page against the edge with the notes floating off right. */
+const MIN_GUTTER = 24
+const MAX_GUTTER = 200
+/** Width a note lane aims for. The CSS clamps to the same figure. */
+const NOTE_WIDTH = 560
 
 type VaultStatus = 'unsupported' | 'off' | 'blocked' | 'ready'
 
@@ -994,7 +999,11 @@ export default function App() {
   const bookmarkedPages = new Set(bookmarks.map((mark) => mark.page))
   const marked = bookmarkedPages.has(currentPage)
 
-  const pdfLane = Math.round(active.baseSize.width * scale) + PIN_GUTTERS
+  const pageWidth = Math.round(active.baseSize.width * scale)
+  const gutter = Math.round(
+    Math.min(MAX_GUTTER, Math.max(MIN_GUTTER, (viewportWidth - pageWidth - NOTE_WIDTH - MIN_GUTTER - PAGE_TRAIL) / 2)),
+  )
+  const pdfLane = pageWidth + gutter + PAGE_TRAIL
   // Pinning is only a kindness while a note still fits beside the page. Past
   // that it would hide the notes behind the page, which is the same complaint
   // from the other side, so a very narrow window gets the sliding lane back.
@@ -1150,7 +1159,7 @@ export default function App() {
 
       <main
         className="pages"
-        style={{ '--pdf-lane': `${pdfLane}px` } as CSSProperties}
+        style={{ '--pdf-lane': `${pdfLane}px`, '--page-gutter': `${gutter}px` } as CSSProperties}
       >
         {Array.from({ length: active.doc.pageCount }, (_, index) => index + 1).map((page) => (
           <PageRow
