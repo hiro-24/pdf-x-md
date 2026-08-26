@@ -301,7 +301,6 @@ button {
 }
 
 .lane--pdf {
-  gap: 6px;
   margin-left: var(--page-gutter, 24px);
 }
 
@@ -342,26 +341,33 @@ button {
   margin-right: 24px;
 }
 
-.lane__foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 22px;
-  font-size: 12px;
-  color: var(--muted);
+.lane__page {
+  position: relative;
 }
 
-.page-num {
-  font-variant-numeric: tabular-nums;
+/* Over the page, not under it. Anything given its own strip is paid for by
+   every page in the document; the page number in particular was already in the
+   toolbar, so it cost height to repeat what was on screen anyway. */
+.lane__badges {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
 }
 
 .peek {
   padding: 1px 8px;
   border-radius: 99px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(3px);
   font-size: 12px;
   color: var(--accent);
+  pointer-events: auto;
 }
 
 .peek:hover {
@@ -1400,8 +1406,13 @@ tr:hover .tag-cell__add {
 /* -------------------------------------------------------------- bookmarks */
 
 .lane__mark {
+  padding: 1px 5px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(3px);
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.5;
 }
 
 .panel__section {

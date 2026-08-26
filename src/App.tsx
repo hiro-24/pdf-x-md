@@ -41,8 +41,9 @@ const uid = () => crypto.randomUUID()
 
 const ZOOM_STEPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 2, 2.5, 3]
 
-/** Height of the sticky toolbar plus the vertical breathing room around a page. */
-const CHROME_HEIGHT = 48 + 46
+/** Height of the sticky toolbar plus the vertical breathing room around a page.
+ *  The 18 is the row's scroll-margin under the toolbar, plus 2px of slack. */
+const CHROME_HEIGHT = 48 + 18
 
 /** 'page' keeps a whole page on screen, which is what makes one row = one screenful. */
 type FitMode = 'page' | 'width' | 'manual'

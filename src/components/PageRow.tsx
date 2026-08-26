@@ -100,30 +100,36 @@ function PageRow(props: Props) {
     <section ref={rowRef} className="row" id={`page-${pageNumber}`} data-page={pageNumber}>
       <div ref={trackRef} className={`row__track${pinPage ? ' is-pinned' : ''}`}>
         <div className="lane lane--pdf">
-          <PdfPage
-            pdf={pdf}
-            pageNumber={pageNumber}
-            scale={scale}
-            visible={visible}
-            fallbackSize={fallbackSize}
-            highlights={highlights}
-            onMeasure={props.onMeasure}
-            onCreateHighlight={props.onCreateHighlight}
-            onRecolorHighlight={props.onRecolorHighlight}
-            onDeleteHighlight={props.onDeleteHighlight}
-            onQuote={props.onQuote}
-          />
-          <div className="lane__foot">
-            <span className="page-num">p.{pageNumber}</span>
-            {bookmarked && (
-              <span className="lane__mark" title="しおりを挟んだページ">
-                🔖
-              </span>
-            )}
-            {notes.length > 0 && (
-              <button type="button" className="peek" onClick={() => scrollLane(1)}>
-                メモ {notes.length} 件 →
-              </button>
+          {/* The markers float over the page's top corner rather than sitting on
+              a strip below it. A strip costs every page its height, all the way
+              down the document, to say things the toolbar already says. */}
+          <div className="lane__page">
+            <PdfPage
+              pdf={pdf}
+              pageNumber={pageNumber}
+              scale={scale}
+              visible={visible}
+              fallbackSize={fallbackSize}
+              highlights={highlights}
+              onMeasure={props.onMeasure}
+              onCreateHighlight={props.onCreateHighlight}
+              onRecolorHighlight={props.onRecolorHighlight}
+              onDeleteHighlight={props.onDeleteHighlight}
+              onQuote={props.onQuote}
+            />
+            {(bookmarked || notes.length > 0) && (
+              <div className="lane__badges">
+                {bookmarked && (
+                  <span className="lane__mark" title="しおりを挟んだページ">
+                    🔖
+                  </span>
+                )}
+                {notes.length > 0 && (
+                  <button type="button" className="peek" onClick={() => scrollLane(1)}>
+                    メモ {notes.length} 件 →
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
