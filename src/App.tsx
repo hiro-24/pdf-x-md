@@ -551,6 +551,29 @@ export default function App() {
     [savePalette],
   )
 
+  const describeTag = useCallback(
+    async (name: string, description: string) => {
+      await savePalette(
+        (await db.getTags()).map((tag) => (tag.name === name ? { ...tag, description } : tag)),
+      )
+    },
+    [savePalette],
+  )
+
+  /** Drop a tag from the palette and from every document carrying it. Leaving
+   *  the name on the documents would resurrect it on the next folder sync. */
+  const deleteTag = useCallback(
+    async (name: string) => {
+      const carriers = (await db.listDocs()).filter((doc) => (doc.tags ?? []).includes(name))
+      for (const doc of carriers) {
+        await db.updateDoc(doc.id, { tags: (doc.tags ?? []).filter((tag) => tag !== name) })
+      }
+      await savePalette((await db.getTags()).filter((tag) => tag.name !== name))
+      setDocs(await db.listDocs())
+    },
+    [savePalette],
+  )
+
   /* ------------------------------------------------------------ sync folder */
 
   const connectVault = useCallback(async () => {
@@ -983,6 +1006,8 @@ export default function App() {
         onToggleTag={toggleTag}
         onCreateTag={createTag}
         onRecolorTag={recolorTag}
+        onDescribeTag={describeTag}
+        onDeleteTag={deleteTag}
         onRequestCover={requestCover}
         onConnectVault={connectVault}
         onUnlockVault={unlockVault}

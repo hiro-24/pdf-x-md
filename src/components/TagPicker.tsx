@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { TAG_COLORS, type Tag, type TagColor } from '../types'
+import ColorGrid from './ColorGrid'
+import { nextColor } from '../lib/palette'
+import type { Tag, TagColor } from '../types'
 
 const WIDTH = 244
 const MAX_HEIGHT = 340
-/** The colour grid's own size, kept in step with .colorgrid in the stylesheet:
- *  five 18px dots with 6px gaps, 8px of padding and a 1px border. */
-const GRID_WIDTH = 132
-const GRID_HEIGHT = 60
 
 /** Stands in for the not-yet-created tag when its colour is being chosen. */
 const DRAFT = '\u0000draft'
@@ -23,49 +21,6 @@ interface Props {
   onCreate: (tag: Tag) => void
   onRecolor: (name: string, color: TagColor) => void
   onClose: () => void
-}
-
-/**
- * The nine colours, as a row of dots.
- *
- * Positioned against the viewport rather than against its row. The list of tags
- * scrolls, and an absolutely placed grid is clipped by that scroll box: for any
- * tag past the first few, clicking the swatch drew the grid somewhere you could
- * neither see nor click, which reads as the colours simply not being changeable.
- */
-function ColorGrid({
-  anchor,
-  current,
-  onPick,
-}: {
-  anchor: DOMRect
-  current: TagColor
-  onPick: (color: TagColor) => void
-}) {
-  const left = Math.max(8, Math.min(anchor.right - GRID_WIDTH, window.innerWidth - GRID_WIDTH - 8))
-  const room = window.innerHeight - anchor.bottom
-  const top = room < GRID_HEIGHT + 8 ? anchor.top - GRID_HEIGHT - 4 : anchor.bottom + 4
-
-  return (
-    <div className="colorgrid" style={{ left, top }}>
-      {TAG_COLORS.map((color) => (
-        <button
-          key={color}
-          type="button"
-          className={`dot dot--${color}${color === current ? ' is-current' : ''}`}
-          title={color}
-          onClick={() => onPick(color)}
-        />
-      ))}
-    </div>
-  )
-}
-
-/** Give a new tag a colour that isn't already crowding the palette. */
-function nextColor(palette: Tag[]): TagColor {
-  const used = new Map<TagColor, number>()
-  for (const tag of palette) used.set(tag.color, (used.get(tag.color) ?? 0) + 1)
-  return [...TAG_COLORS].sort((a, b) => (used.get(a) ?? 0) - (used.get(b) ?? 0))[0]
 }
 
 export default function TagPicker({ anchor, palette, applied, onToggle, onCreate, onRecolor, onClose }: Props) {
@@ -159,7 +114,9 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
           <div key={tag.name} className="tagpicker__row">
             <label className="tagpicker__item">
               <input type="checkbox" checked={applied.includes(tag.name)} onChange={() => onToggle(tag.name)} />
-              <span className={`tag tag--${tag.color}`}>{tag.name}</span>
+              <span className={`tag tag--${tag.color}`} title={tag.description?.trim() || undefined}>
+                {tag.name}
+              </span>
             </label>
             <button
               type="button"

@@ -1020,6 +1020,171 @@ button.tag:hover {
   text-decoration: underline;
 }
 
+/* Pushed to the far end of the filter row: it acts on the palette, not on what
+   the table is showing, so it should not read as another filter. */
+.tag-filters__manage {
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag-filters__manage:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tag-filters__manage.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------- tag manager */
+
+.tag-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.tag-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tag-table th,
+.tag-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tag-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tag-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tag-table .col-tag {
+  width: 200px;
+}
+
+/* The swatch's grid is placed from its own rect, so this cell only has to stop
+   the column collapsing around a 15px dot. */
+.tag-table .col-swatch {
+  width: 48px;
+  position: relative;
+}
+
+.tag-table .col-num {
+  width: 60px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.tag-table .col-actions {
+  width: 84px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tag-table .dot--pick {
+  opacity: 1;
+}
+
+/* A description that reads as text until you click it, the way the title in the
+   document table does - an always-on input turns the table into a form. */
+.tag-table__desc-view {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.tag-table__desc-view:hover {
+  border-color: var(--border);
+}
+
+.tag-table__desc-view.is-empty {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.tag-table__desc,
+.tag-table__name {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.tag-table__name {
+  border-color: var(--border);
+}
+
+.tag-table__name:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tag-table__new td {
+  background: var(--surface-2);
+}
+
+.tag-table__taken {
+  font-size: 12px;
+  color: #c2412d;
+}
+
+.tag-table__add {
+  white-space: nowrap;
+  padding: 3px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 99px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.tag-table__add:disabled {
+  border-color: var(--border);
+  color: color-mix(in srgb, var(--muted) 60%, transparent);
+  cursor: default;
+}
+
+.tag-table__delete {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag-table__delete:hover {
+  background: color-mix(in srgb, #c2412d 12%, transparent);
+  color: #c2412d;
+}
+
 /* --------------------------------------------------------------- table */
 
 .table-wrap {

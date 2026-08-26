@@ -38,6 +38,9 @@ export type TagColor = (typeof TAG_COLORS)[number]
 export interface Tag {
   name: string
   color: TagColor
+  /** What the tag is for, in the reader's own words. Optional and often empty;
+   *  it earns its place once a palette grows past what you can hold in mind. */
+  description?: string
 }
 
 /** Summary of a document, without the (potentially huge) blob. */

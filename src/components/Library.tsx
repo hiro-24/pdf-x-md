@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import DocTable, { titleOf, type Sort, type SortKey } from './DocTable'
+import TagTable from './TagTable'
+import { tagUsage } from '../lib/palette'
 import type { DocSummary, Tag, TagColor } from '../types'
 
 interface Props {
@@ -25,6 +27,8 @@ interface Props {
   onToggleTag: (id: string, name: string) => void
   onCreateTag: (tag: Tag) => void
   onRecolorTag: (name: string, color: TagColor) => void
+  onDescribeTag: (name: string, description: string) => void
+  onDeleteTag: (name: string) => void
   onRequestCover: (id: string) => Promise<string | null>
 }
 
@@ -48,6 +52,8 @@ export default function Library({
   onToggleTag,
   onCreateTag,
   onRecolorTag,
+  onDescribeTag,
+  onDeleteTag,
   onRequestCover,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -55,6 +61,9 @@ export default function Library({
   const [query, setQuery] = useState('')
   const [activeTags, setActiveTags] = useState<string[]>([])
   const [sort, setSort] = useState<Sort>({ key: 'opened', dir: 'desc' })
+  const [managing, setManaging] = useState(false)
+
+  const usage = useMemo(() => tagUsage(docs), [docs])
 
   const toggleFilter = (name: string) =>
     setActiveTags((current) => (current.includes(name) ? current.filter((n) => n !== name) : [...current, name]))
@@ -162,24 +171,43 @@ export default function Library({
               </span>
             </div>
 
-            {palette.length > 0 && (
-              <div className="tag-filters">
-                {palette.map((tag) => (
-                  <button
-                    key={tag.name}
-                    type="button"
-                    className={`tag tag--${tag.color}${activeTags.includes(tag.name) ? ' is-on' : ''}`}
-                    onClick={() => toggleFilter(tag.name)}
-                  >
-                    {tag.name}
-                  </button>
-                ))}
-                {activeTags.length > 0 && (
-                  <button type="button" className="tag-filters__clear" onClick={() => setActiveTags([])}>
-                    絞り込みを解除
-                  </button>
-                )}
-              </div>
+            <div className="tag-filters">
+              {palette.map((tag) => (
+                <button
+                  key={tag.name}
+                  type="button"
+                  className={`tag tag--${tag.color}${activeTags.includes(tag.name) ? ' is-on' : ''}`}
+                  title={tag.description?.trim() || undefined}
+                  onClick={() => toggleFilter(tag.name)}
+                >
+                  {tag.name}
+                </button>
+              ))}
+              {activeTags.length > 0 && (
+                <button type="button" className="tag-filters__clear" onClick={() => setActiveTags([])}>
+                  絞り込みを解除
+                </button>
+              )}
+              {/* Always offered, palette or not: the first tag has to start
+                  somewhere, and until now that meant opening a document's menu. */}
+              <button
+                type="button"
+                className={`tag-filters__manage${managing ? ' is-on' : ''}`}
+                onClick={() => setManaging((value) => !value)}
+              >
+                タグを管理{palette.length ? ` (${palette.length})` : ''}
+              </button>
+            </div>
+
+            {managing && (
+              <TagTable
+                palette={palette}
+                usage={usage}
+                onCreate={onCreateTag}
+                onRecolor={onRecolorTag}
+                onDescribe={onDescribeTag}
+                onDelete={onDeleteTag}
+              />
             )}
 
             {visible.length > 0 ? (
