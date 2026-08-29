@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import DocTable, { titleOf, type Sort, type SortKey } from './DocTable'
 import TagTable from './TagTable'
+import Shelf from './Shelf'
 import { tagUsage } from '../lib/palette'
+import type { LibraryView } from '../App'
 import type { DocSummary, Tag, TagColor } from '../types'
 
 interface Props {
@@ -30,6 +32,9 @@ interface Props {
   onDescribeTag: (name: string, description: string) => void
   onDeleteTag: (name: string) => void
   onRequestCover: (id: string) => Promise<string | null>
+  /** Table of rows, or a shelf of covers. */
+  view: LibraryView
+  onChangeView: (view: LibraryView) => void
 }
 
 export default function Library({
@@ -55,6 +60,8 @@ export default function Library({
   onDescribeTag,
   onDeleteTag,
   onRequestCover,
+  view,
+  onChangeView,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -169,6 +176,24 @@ export default function Library({
               <span className="library__count">
                 {visible.length === docs.length ? `${docs.length} 件` : `${visible.length} / ${docs.length} 件`}
               </span>
+              <div className="viewswitch">
+                <button
+                  type="button"
+                  className={view === 'table' ? 'is-on' : ''}
+                  onClick={() => onChangeView('table')}
+                  title="表で見る"
+                >
+                  表
+                </button>
+                <button
+                  type="button"
+                  className={view === 'shelf' ? 'is-on' : ''}
+                  onClick={() => onChangeView('shelf')}
+                  title="表紙で見る"
+                >
+                  表紙
+                </button>
+              </div>
             </div>
 
             <div className="tag-filters">
@@ -210,25 +235,58 @@ export default function Library({
               />
             )}
 
-            {visible.length > 0 ? (
-              <DocTable
-                docs={visible}
-                palette={palette}
-                noteCounts={noteCounts}
-                sort={sort}
-                onSort={sortBy}
-                onOpen={onOpenDoc}
-                onRename={onRenameDoc}
-                onToggleTag={onToggleTag}
-                onCreateTag={onCreateTag}
-                onRecolorTag={onRecolorTag}
-                onFilterTag={toggleFilter}
-                onDelete={onDeleteDoc}
-                onRequestCover={onRequestCover}
-              />
-            ) : (
-              <p className="library__empty">条件に合う PDF がありません。</p>
+            {/* The shelf has no column headings to click, so the order it is
+                in has to be sayable some other way. */}
+            {view === 'shelf' && visible.length > 0 && (
+              <div className="shelf__sort">
+                <label>
+                  並び順
+                  <select
+                    value={`${sort.key}:${sort.dir}`}
+                    onChange={(event) => {
+                      const [key, dir] = event.target.value.split(':')
+                      setSort({ key: key as SortKey, dir: dir as Sort['dir'] })
+                    }}
+                  >
+                    <option value="opened:desc">最近ひらいた順</option>
+                    <option value="added:desc">追加した順</option>
+                    <option value="title:asc">タイトル順</option>
+                    <option value="notes:desc">メモの多い順</option>
+                    <option value="pages:desc">ページの多い順</option>
+                  </select>
+                </label>
+              </div>
             )}
+
+            {visible.length === 0 && <p className="library__empty">条件に合う PDF がありません。</p>}
+
+            {visible.length > 0 &&
+              (view === 'shelf' ? (
+                <Shelf
+                  docs={visible}
+                  palette={palette}
+                  noteCounts={noteCounts}
+                  onOpen={onOpenDoc}
+                  onDelete={onDeleteDoc}
+                  onRequestCover={onRequestCover}
+                />
+              ) : (
+                <DocTable
+                  docs={visible}
+                  palette={palette}
+                  noteCounts={noteCounts}
+                  sort={sort}
+                  onSort={sortBy}
+                  onOpen={onOpenDoc}
+                  onRename={onRenameDoc}
+                  onToggleTag={onToggleTag}
+                  onCreateTag={onCreateTag}
+                  onRecolorTag={onRecolorTag}
+                  onFilterTag={toggleFilter}
+                  onDelete={onDeleteDoc}
+                  onRequestCover={onRequestCover}
+                />
+              ))}
           </>
         )}
 

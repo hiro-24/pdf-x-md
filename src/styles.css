@@ -1043,6 +1043,190 @@ button.tag:hover {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------- view switch */
+
+.viewswitch {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface-2);
+}
+
+.viewswitch button {
+  padding: 3px 12px;
+  border-radius: 99px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.viewswitch button.is-on {
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ shelf */
+
+.shelf__sort {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.shelf__sort label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shelf__sort select {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Wide enough that a title is readable, narrow enough that a shelf reads as a
+   shelf rather than a row of posters. */
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 26px 20px;
+  margin-bottom: 14px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A4 is 1:1.414; anything else is letterboxed rather than cropped, because the
+   cover is the thing you are recognising and a crop can take the title off it. */
+.tile__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1.414;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.tile__cover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.18);
+}
+
+.tile__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tile__blank {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 14px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--muted);
+}
+
+.tile__notes {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(3px);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.tile__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.tile__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tile__title:hover {
+  color: var(--accent);
+}
+
+.tile__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Kept out of the way until the tile is under the cursor: a grid of delete
+   buttons invites exactly one kind of accident. */
+.tile__delete {
+  opacity: 0;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tile:hover .tile__delete,
+.tile__delete:focus-visible {
+  opacity: 1;
+}
+
+.tile__delete:hover {
+  background: color-mix(in srgb, #c2412d 12%, transparent);
+  color: #c2412d;
+}
+
+.tile__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tile__tags .tag {
+  font-size: 11px;
+}
+
 /* ----------------------------------------------------------- tag manager */
 
 .tag-table-wrap {

@@ -23,6 +23,8 @@ import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type Highli
 const VAULT_KEY = 'vault-dir'
 /** Whether the page stays put while notes scroll past it. */
 const PIN_KEY = 'pin-page'
+/** Which way the library was last shown: the table, or the shelf of covers. */
+const VIEW_KEY = 'library-view'
 /** Below this there is no point pinning: the note would have nowhere to sit. */
 const MIN_NOTE_WIDTH = 300
 /** Breathing room between the page and the first note lane. */
@@ -36,6 +38,7 @@ const MAX_GUTTER = 200
 const NOTE_WIDTH = 560
 
 type VaultStatus = 'unsupported' | 'off' | 'blocked' | 'ready'
+export type LibraryView = 'table' | 'shelf'
 
 const uid = () => crypto.randomUUID()
 
@@ -157,6 +160,7 @@ export default function App() {
   const [vaultDir, setVaultDir] = useState<FileSystemDirectoryHandle | null>(null)
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>(vaultSupported ? 'off' : 'unsupported')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [libraryView, setLibraryView] = useState<LibraryView>('table')
   const [palette, setPalette] = useState<Tag[]>([])
   const [searchIndex, setSearchIndex] = useState<Map<string, string>>(new Map())
   const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map())
@@ -178,6 +182,11 @@ export default function App() {
   const jsonInputRef = useRef<HTMLInputElement>(null)
   /** docId -> object URL for its cover, so a second hover is instant. */
   const coverUrls = useRef(new Map<string, string>())
+  /** Requests in flight, so a shelf asking twice for one cover renders it once. */
+  const coverJobs = useRef(new Map<string, Promise<string | null>>())
+  /** Renders run one at a time: a shelf of documents with no stored cover would
+   *  otherwise parse every PDF in the library at the same moment. */
+  const coverQueue = useRef<Promise<unknown>>(Promise.resolve())
   /** present() runs above savePalette in the file; the ref bridges the gap. */
   const savePaletteRef = useRef<(tags: Tag[]) => Promise<void>>(async () => {})
 
@@ -187,6 +196,7 @@ export default function App() {
     db.listDocs().then(setDocs).catch(console.error)
     db.getTags().then(setPalette).catch(console.error)
     db.getSetting<boolean>(PIN_KEY).then((value) => value !== undefined && setPinPage(value), console.error)
+    db.getSetting<LibraryView>(VIEW_KEY).then((value) => value && setLibraryView(value), console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
     if (!vaultSupported) return
@@ -475,27 +485,45 @@ export default function App() {
   const requestCover = useCallback(async (id: string): Promise<string | null> => {
     const cached = coverUrls.current.get(id)
     if (cached) return cached
+    const running = coverJobs.current.get(id)
+    if (running) return running
 
-    let blob = await db.getThumb(id)
-    if (!blob) {
-      const record = await db.getDoc(id)
-      if (!record) return null
-      const task = loadPdf(await record.blob.arrayBuffer())
-      try {
-        blob = (await renderCover(await task.promise)) ?? undefined
-        if (blob) await db.putThumb(id, blob)
-      } catch (cause) {
-        if (!isTeardown(cause)) console.error('表紙を作れませんでした', cause)
-        return null
-      } finally {
-        await task.destroy().catch(() => {})
+    const job = (async () => {
+      let blob = await db.getThumb(id)
+      if (!blob) {
+        const render = coverQueue.current.then(async () => {
+          const record = await db.getDoc(id)
+          if (!record) return undefined
+          const task = loadPdf(await record.blob.arrayBuffer())
+          try {
+            const cover = (await renderCover(await task.promise)) ?? undefined
+            if (cover) await db.putThumb(id, cover)
+            return cover
+          } catch (cause) {
+            if (!isTeardown(cause)) console.error('表紙を作れませんでした', cause)
+            return undefined
+          } finally {
+            await task.destroy().catch(() => {})
+          }
+        })
+        // The queue must survive a failure, or one bad PDF stops every cover
+        // behind it.
+        coverQueue.current = render.catch(() => {})
+        blob = await render
       }
-    }
-    if (!blob) return null
+      if (!blob) return null
 
-    const url = URL.createObjectURL(blob)
-    coverUrls.current.set(id, url)
-    return url
+      const url = URL.createObjectURL(blob)
+      coverUrls.current.set(id, url)
+      return url
+    })()
+
+    coverJobs.current.set(id, job)
+    try {
+      return await job
+    } finally {
+      coverJobs.current.delete(id)
+    }
   }, [])
 
   /* ------------------------------------------------------ library metadata */
@@ -1009,6 +1037,11 @@ export default function App() {
         onDescribeTag={describeTag}
         onDeleteTag={deleteTag}
         onRequestCover={requestCover}
+        view={libraryView}
+        onChangeView={(next) => {
+          setLibraryView(next)
+          void db.setSetting(VIEW_KEY, next).catch(console.error)
+        }}
         onConnectVault={connectVault}
         onUnlockVault={unlockVault}
         onDisconnectVault={disconnectVault}

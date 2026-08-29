@@ -4,3 +4,7 @@ public/pdfjs
 tsconfig.tsbuildinfo
 .DS_Store
 *.local
+
+# Generated on demand by tests/fixtures/make.mjs
+tests/fixtures/*.pdf
+tests/unit/.*.mjs
