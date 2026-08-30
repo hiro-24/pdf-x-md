@@ -183,6 +183,54 @@ Chrome のフォルダ選択ダイアログは macOS の `~/Library` 配下を�
 `npm run dev` を上げたまま `npm test`。名前を渡すと一部だけ走ります（`npm test shelf lanes`）。
 実際の Chrome を Playwright で動かすので、詳細は [tests/README.md](tests/README.md) を見てください。
 
+## 開発の進め方
+
+`main` は常に動く版にしておきます。手を入れるときは枝を切ります。
+
+```bash
+git switch -c feat/xxx        # 作業用の枝を作る（直す時は fix/xxx）
+# ... 実装 ...
+npm test                      # dev を上げたまま、全部緑を確認
+git switch main
+git merge --no-ff feat/xxx    # main に取り込む
+git branch -d feat/xxx        # 枝を片づける
+git push
+```
+
+`--no-ff` を付けるのは、「この機能はこの何コミット」という括りを履歴に残すためです。
+付けないと main に平らに並んでしまい、あとから境目が分かりません。
+
+やめたくなったら、こうです。跡形もなく消えます。
+
+```bash
+git switch main
+git branch -D feat/xxx        # 大文字の D は「未取り込みでも消す」
+```
+
+節目には印を打ちます。
+
+```bash
+git tag -a v0.2.0 -m "何が入ったか"
+git push --tags
+```
+
+おかしくなったときは `git switch --detach v0.1.0` でその時点に戻って確かめられます。
+戻るときは `git switch main` です。
+
+### release / hotfix を足す日
+
+いまは使いません。**インストール型のアプリとして配布物を出した日**が引き金です。
+main に push すれば直る、が成り立たなくなって初めて、この2つが仕事をします。
+
+| 枝 | 切る時 | 何のため |
+|---|---|---|
+| `release/0.3` | 出す直前 | 出す版を固定し、その上だけで仕上げる。並行して次の開発を進められる |
+| `hotfix/0.2.1` | 出した版に不具合 | tag から切って直し、main にも作業中の枝にも戻す |
+
+`develop` は、「次に出す版には入れたくないが、取り込んではおきたい」ものが出てきたら
+足します（`git switch -c develop main` の一行です）。1人で開発している間は、
+merge が毎回2回になるだけで得るものがありません。
+
 ## 既知の注意点
 
 - **pdf.js の速度を自動化ブラウザで測らないこと。** Playwright（CDP）は pdf.js の worker に
