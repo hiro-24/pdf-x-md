@@ -11,6 +11,10 @@ const errors = []
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 
+const pin = async (side) => {
+  await page.locator('.toolbar__group button', { hasText: side }).click()
+  await page.waitForTimeout(400)
+}
 const geom = () => page.evaluate(() => {
   const track = document.querySelector('#page-1 .row__track')
   const box = (sel, i = 0) => {
@@ -20,8 +24,8 @@ const geom = () => page.evaluate(() => {
     return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) }
   }
   return { scrollLeft: Math.round(track.scrollLeft), clientWidth: Math.round(track.clientWidth),
-    pinned: track.classList.contains('is-pinned'), pdf: box('.lane--pdf'),
-    notes: [0, 1, 2].map((i) => box('.lane--note', i)) }
+    pinned: track.classList.contains('is-pinned'), right: track.classList.contains('is-pinned-right'),
+    pdf: box('.lane--pdf'), canvas: box('canvas'), notes: [0, 1, 2].map((i) => box('.lane--note', i)) }
 })
 const slideRight = async () => {
   await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 99999 })
@@ -77,20 +81,80 @@ check('peek lands a whole note beside the page', landed !== undefined, 'true')
 // settling with a sliver of one showing beside it.
 check('the note beside the page starts flush against it', Math.abs(landed.left - g.pdf.right) <= 2, 'true')
 
-// --- the escape hatch still works, and is remembered ---
-await page.locator('.toolbar button', { hasText: 'ページ固定' }).click()
-await page.waitForTimeout(300)
+// --- held against the right edge instead ---
+await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
+await pin('右')
+g = await geom()
+check('the track says which edge', [g.pinned, g.right].join(','), 'true,true')
+check('the page moved to the right', g.pdf.right, g.clientWidth)
+check('the notes took the left', g.notes[0].left, 24)
+check('a whole note fits beside it', g.notes[0].right <= g.pdf.left, 'true')
+check('the arrow now points at the notes', (await page.locator('#page-1 .peek').innerText()).trim(), '← メモ 3 件')
+
 await slideRight()
-check('turning it off lets the page slide away', (await geom()).pdf.left < 0, 'true')
+g = await geom()
+check('the page holds the right edge when scrolled', g.pdf.right, g.clientWidth)
+check('and keeps its full width', g.pdf.width > 600, 'true')
+
+// The page should be the same distance in from its edge whichever side it is on.
+await pin('左')
+await page.waitForTimeout(400)
+const fromLeft = (await geom()).canvas.left
+await pin('右')
+await page.waitForTimeout(400)
+g = await geom()
+check('inset from the right matches the inset from the left', g.clientWidth - g.canvas.right, fromLeft)
+
+// A note added while the page is on the right must not land behind it either.
+await page.locator('#page-1 .add-note').click()
+await page.waitForTimeout(900)
+await page.locator('#page-1 .note__editor').last().fill('# 右固定で追加\n\n本文')
+await page.keyboard.press('Escape')
+await page.waitForTimeout(600)
+g = await geom()
+const added = await page.evaluate(() => {
+  const lanes = document.querySelectorAll('#page-1 .lane--note')
+  const r = lanes[lanes.length - 1].getBoundingClientRect()
+  return { left: Math.round(r.left), right: Math.round(r.right) }
+})
+check('a new note lands clear of the right-hand page', added.right <= g.pdf.left + 2, 'true')
+check('and inside the window', added.left >= -2, 'true')
+
+// --- the escape hatch still works, and the side is remembered ---
+await pin('なし')
+await slideRight()
+g = await geom()
+check('turning it off lets the page slide away', g.pdf.left < 0, 'true')
+check('and drops both classes', [g.pinned, g.right].join(','), 'false,false')
+
+await pin('右')
 await page.reload()
 await page.waitForSelector('.doc-table__open')
 await page.locator('.doc-table__open').first().click()
 await page.waitForSelector('.toolbar', { timeout: 60000 })
 await page.waitForTimeout(1500)
-check('the choice survives a reload', (await geom()).pinned, false)
-await page.locator('.toolbar button', { hasText: 'ページ固定' }).click()
-await page.waitForTimeout(300)
-check('and turning it back on sticks', (await geom()).pinned, true)
+g = await geom()
+check('the side survives a reload', [g.pinned, g.right].join(','), 'true,true')
+await pin('左')
+g = await geom()
+check('and switching back sticks', [g.pinned, g.right].join(','), 'true,false')
+
+// --- a setting written before the page could pin right still means "left" ---
+await page.evaluate(() => new Promise((res) => {
+  const r = indexedDB.open('pdf-note-app')
+  r.onsuccess = () => {
+    const tx = r.result.transaction('settings', 'readwrite')
+    tx.objectStore('settings').put(true, 'pin-page')
+    tx.oncomplete = () => { r.result.close(); res() }
+  }
+}))
+await page.reload()
+await page.waitForSelector('.doc-table__open')
+await page.locator('.doc-table__open').first().click()
+await page.waitForSelector('.toolbar', { timeout: 60000 })
+await page.waitForTimeout(1500)
+g = await geom()
+check('an old true setting reads as the left edge', [g.pinned, g.right].join(','), 'true,false')
 
 // --- the page is inset from the edge, by more when there is room to spare ---
 await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
@@ -112,6 +176,13 @@ check('narrow window unpins', (await geom()).pinned, false)
 await page.setViewportSize({ width: 1600, height: 1000 })
 await page.waitForTimeout(800)
 check('and pins again when there is room', (await geom()).pinned, true)
+await pin('右')
+await page.setViewportSize({ width: 760, height: 1000 })
+await page.waitForTimeout(800)
+check('a right-hand page unpins on a narrow window too', (await geom()).right, false)
+await page.setViewportSize({ width: 1600, height: 1000 })
+await page.waitForTimeout(800)
+check('and comes back to the right, not the left', (await geom()).right, true)
 
 console.log(errors.length ? `CONSOLE ERRORS:\n${errors.join('\n')}` : 'no console errors')
 await browser.close()
