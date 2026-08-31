@@ -39,7 +39,9 @@ check('a tile per document', await page.locator('.tile').count(), 2)
 await page.waitForFunction(() => {
   const imgs = [...document.querySelectorAll('.tile__cover img')]
   return imgs.length === 2 && imgs.every((img) => img.complete && img.naturalWidth > 0)
-}, null, { timeout: 30000 })
+// Generous: pdf.js runs 20-100x slower under CDP, so a cover that takes a
+// blink in real Chrome can take many seconds here.
+}, null, { timeout: 90000 })
 const covers = await page.evaluate(() => [...document.querySelectorAll('.tile__cover img')].map((img) => ({
   loaded: img.complete && img.naturalWidth > 0, w: img.naturalWidth, h: img.naturalHeight })))
 console.log('    covers:', JSON.stringify(covers))

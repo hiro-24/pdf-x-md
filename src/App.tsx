@@ -4,6 +4,7 @@ import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
 import * as db from './db'
 import { laneOffset } from './lib/lane'
+import { settleOn } from './lib/settle'
 import { download, toMarkdown } from './lib/markdown-export'
 import { adoptBundle, bundleStamp, mergePalettes, parseBundle, stampOf, toBundle, toPaletteFile } from './lib/bundle'
 import {
@@ -745,43 +746,18 @@ export default function App() {
     const page = restoreTo.current
     if (!active || page == null) return
 
-    let frame = 0
-    let steady = 0
-    let previousTop = -1
-    const deadline = performance.now() + 2000
-    // Aiming once isn't enough. The rows are laid out at the old zoom for a
-    // frame or two while fit-to-window is computed, and every page is a little
-    // shorter than its final height, so a single jump lands short by that error
-    // times the page number - a page or two into a short PDF, far more into a
-    // long one. Re-aim each frame until the target stops moving.
-    const settle = () => {
-      const row = document.getElementById(`page-${page}`)
-      if (row) {
+    return settleOn(page, {
+      onStep: () => {
         // Cleared only once a scroll has actually run: clearing it up front
         // would let StrictMode's discarded first pass eat the restore.
         restoreTo.current = null
-        const top = Math.round(row.getBoundingClientRect().top + window.scrollY)
-        steady = top === previousTop ? steady + 1 : 0
-        previousTop = top
-        row.scrollIntoView({ block: 'start' })
         syncCurrentPage()
-      }
-      if (steady < 3 && performance.now() < deadline) frame = requestAnimationFrame(settle)
-      else stop()
-    }
-
-    // Whoever reaches for the wheel has overruled us; stop pulling them back.
-    const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
-    const stop = () => {
-      cancelAnimationFrame(frame)
-      restoreTo.current = null
-      setRestoring(false)
-      for (const name of events) window.removeEventListener(name, stop)
-    }
-    for (const name of events) window.addEventListener(name, stop, { passive: true })
-
-    frame = requestAnimationFrame(settle)
-    return stop
+      },
+      onDone: () => {
+        restoreTo.current = null
+        setRestoring(false)
+      },
+    })
   }, [active, syncCurrentPage])
 
   useEffect(() => {
@@ -991,11 +967,30 @@ export default function App() {
 
   const jumpTo = useCallback(
     (page: number) => {
+      const row = document.getElementById(`page-${page}`)
+      if (!row) return
       // Gliding to the next page keeps your bearings. Gliding across thirty of
       // them just makes you watch the pages you skipped, so those jump outright.
-      const behavior: ScrollBehavior = Math.abs(page - currentPageRef.current) > 3 ? 'auto' : 'smooth'
-      document.getElementById(`page-${page}`)?.scrollIntoView({ behavior, block: 'start' })
-      requestAnimationFrame(syncCurrentPage)
+      const near = Math.abs(page - currentPageRef.current) <= 3
+      row.scrollIntoView({ behavior: near ? 'smooth' : 'auto', block: 'start' })
+      syncCurrentPage()
+
+      // One shot lands short whenever the pages in between have not rendered
+      // yet: they stand at a placeholder height, and the error adds up. Correct
+      // it afterwards - but not during a glide, which re-aiming would cancel.
+      if (!near) {
+        settleOn(page, { onStep: syncCurrentPage })
+        return
+      }
+      let timer = 0
+      const correct = () => {
+        window.clearTimeout(timer)
+        settleOn(page, { onStep: syncCurrentPage })
+      }
+      window.addEventListener('scrollend', correct, { once: true })
+      // scrollend never arrives if the row was already where it belongs, and a
+      // listener left armed would yank the reader back on their next scroll.
+      timer = window.setTimeout(() => window.removeEventListener('scrollend', correct), 1500)
     },
     [syncCurrentPage],
   )
