@@ -31,6 +31,24 @@ const slideRight = async () => {
   await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 99999 })
   await page.waitForTimeout(400)
 }
+/** Beside a right-hand page the lane runs the other way and scrollLeft counts
+ *  down from zero, so "the far end" is the most negative position. */
+const slideAway = async () => {
+  await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = -99999 })
+  await page.waitForTimeout(400)
+}
+const rest = async () => {
+  await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
+  await page.waitForTimeout(400)
+}
+/** Playwright scrolls an element into view before clicking it, and the peek
+ *  button rides on the pinned page - that scroll drags the lane back to its
+ *  resting place before the click lands. A plain DOM click is what a reader's
+ *  mouse actually does. */
+const peek = async () => {
+  await page.evaluate(() => document.querySelector('#page-1 .peek').click())
+  await page.waitForTimeout(900)
+}
 const inset = () => page.evaluate(() =>
   Math.round(document.querySelector('#page-1 canvas').getBoundingClientRect().left))
 
@@ -81,44 +99,56 @@ check('peek lands a whole note beside the page', landed !== undefined, 'true')
 // settling with a sliver of one showing beside it.
 check('the note beside the page starts flush against it', Math.abs(landed.left - g.pdf.right) <= 2, 'true')
 
-// --- held against the right edge instead ---
-await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
+// --- held against the right edge instead: the mirror image, not a half-mirror ---
+await rest()
 await pin('右')
+await rest()
 g = await geom()
 check('the track says which edge', [g.pinned, g.right].join(','), 'true,true')
 check('the page moved to the right', g.pdf.right, g.clientWidth)
-check('the notes took the left', g.notes[0].left, 24)
-check('a whole note fits beside it', g.notes[0].right <= g.pdf.left, 'true')
-check('the arrow now points at the notes', (await page.locator('#page-1 .peek').innerText()).trim(), '← メモ 3 件')
+check('the first note is the one against the page', g.notes[0].right, g.pdf.left)
+check('and the next queues up away from it', g.notes[1].right < g.notes[0].right, 'true')
+check('the arrow points at the notes', (await page.locator('#page-1 .peek').innerText()).trim(), '← メモ 3 件')
 
-await slideRight()
+// Stepping forward moves away from the page, one note at a time.
+await peek()
 g = await geom()
-check('the page holds the right edge when scrolled', g.pdf.right, g.clientWidth)
+check('peek brings the second note against the page', g.notes[1].right, g.pdf.left)
+check('and slides the first one behind it', g.notes[0].left >= g.pdf.left - 2, 'true')
+await peek()
+g = await geom()
+check('peeking again reaches the third', g.notes[2].right, g.pdf.left)
+
+await slideAway()
+g = await geom()
+check('the page holds the right edge at the far end', g.pdf.right, g.clientWidth)
 check('and keeps its full width', g.pdf.width > 600, 'true')
+await rest()
 
 // The page should be the same distance in from its edge whichever side it is on.
 await pin('左')
-await page.waitForTimeout(400)
+await rest()
 const fromLeft = (await geom()).canvas.left
 await pin('右')
-await page.waitForTimeout(400)
+await rest()
 g = await geom()
 check('inset from the right matches the inset from the left', g.clientWidth - g.canvas.right, fromLeft)
 
-// A note added while the page is on the right must not land behind it either.
+// A note added while the page is on the right must come to rest against it.
 await page.locator('#page-1 .add-note').click()
 await page.waitForTimeout(900)
 await page.locator('#page-1 .note__editor').last().fill('# 右固定で追加\n\n本文')
 await page.keyboard.press('Escape')
-await page.waitForTimeout(600)
+await page.waitForTimeout(700)
 g = await geom()
 const added = await page.evaluate(() => {
   const lanes = document.querySelectorAll('#page-1 .lane--note')
   const r = lanes[lanes.length - 1].getBoundingClientRect()
   return { left: Math.round(r.left), right: Math.round(r.right) }
 })
-check('a new note lands clear of the right-hand page', added.right <= g.pdf.left + 2, 'true')
+check('a new note lands against the right-hand page', added.right, g.pdf.left)
 check('and inside the window', added.left >= -2, 'true')
+await rest()
 
 // --- the escape hatch still works, and the side is remembered ---
 await pin('なし')
@@ -213,17 +243,22 @@ check('and on the left when asked', b.left, 0)
 
 // The page has to be the same distance in from its edge on a row with notes and
 // on one without, or scrolling down would shuffle it about.
+// Measured on the page's box rather than on its canvas: a row that is off
+// screen keeps the bitmap it was last drawn with, and only redraws when it
+// comes back. The box is laid out from the current zoom either way, and the box
+// is what "where the page sits" means.
 const insetOf = (id) => page.evaluate((n) => {
-  const c = document.querySelector(`#page-${n} canvas`).getBoundingClientRect()
+  const b = document.querySelector(`#page-${n} .pdf-page`).getBoundingClientRect()
   const w = document.querySelector(`#page-${n} .row__track`).clientWidth
-  return { left: Math.round(c.left), right: Math.round(w - c.right) }
+  return { left: Math.round(b.left), right: Math.round(w - b.right) }
 }, id)
+
 await pin('右')
-await page.waitForTimeout(600)
+await page.waitForTimeout(700)
 check('a bare row and a noted row sit at the same inset',
   (await insetOf(2)).right, (await insetOf(1)).right)
 await pin('左')
-await page.waitForTimeout(600)
+await page.waitForTimeout(700)
 check('same on the left', (await insetOf(2)).left, (await insetOf(1)).left)
 
 console.log(errors.length ? `CONSOLE ERRORS:\n${errors.join('\n')}` : 'no console errors')
