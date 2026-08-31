@@ -21,7 +21,7 @@ import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type Highli
 
 /** Where the sync folder handle lives between sessions. */
 const VAULT_KEY = 'vault-dir'
-/** Whether the page stays put while notes scroll past it. */
+/** Which side the page stays put on while notes scroll past it. */
 const PIN_KEY = 'pin-page'
 /** Which way the library was last shown: the table, or the shelf of covers. */
 const VIEW_KEY = 'library-view'
@@ -39,6 +39,8 @@ const NOTE_WIDTH = 560
 
 type VaultStatus = 'unsupported' | 'off' | 'blocked' | 'ready'
 export type LibraryView = 'table' | 'shelf'
+/** Where the page sits while the notes scroll: against one edge, or not at all. */
+export type PinSide = 'left' | 'right' | 'off'
 
 const uid = () => crypto.randomUUID()
 
@@ -148,9 +150,9 @@ export default function App() {
   const [zoomIndex, setZoomIndex] = useState(3)
   const [fitMode, setFitMode] = useState<FitMode>('page')
   const [fitScale, setFitScale] = useState(1)
-  // On by default: notes are read *against* the page, and letting the page
+  // Pinned by default: notes are read *against* the page, and letting the page
   // scroll away turns the lane into a plain list of notes with no subject.
-  const [pinPage, setPinPage] = useState(true)
+  const [pinSide, setPinSide] = useState<PinSide>('left')
   const [currentPage, setCurrentPage] = useState(1)
   const [panelOpen, setPanelOpen] = useState(false)
   const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null)
@@ -195,7 +197,12 @@ export default function App() {
   useEffect(() => {
     db.listDocs().then(setDocs).catch(console.error)
     db.getTags().then(setPalette).catch(console.error)
-    db.getSetting<boolean>(PIN_KEY).then((value) => value !== undefined && setPinPage(value), console.error)
+    // Older settings held a boolean, from when the page could only pin left.
+    db.getSetting<boolean | PinSide>(PIN_KEY).then((value) => {
+      if (value === true) setPinSide('left')
+      else if (value === false) setPinSide('off')
+      else if (value) setPinSide(value)
+    }, console.error)
     db.getSetting<LibraryView>(VIEW_KEY).then((value) => value && setLibraryView(value), console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
@@ -1066,7 +1073,12 @@ export default function App() {
   // Pinning is only a kindness while a note still fits beside the page. Past
   // that it would hide the notes behind the page, which is the same complaint
   // from the other side, so a very narrow window gets the sliding lane back.
-  const pinned = pinPage && viewportWidth - pdfLane >= MIN_NOTE_WIDTH
+  const pinned: PinSide = viewportWidth - pdfLane >= MIN_NOTE_WIDTH ? pinSide : 'off'
+
+  const choosePin = (side: PinSide) => {
+    setPinSide(side)
+    void db.setSetting(PIN_KEY, side).catch(console.error)
+  }
 
   return (
     <div className="app">
@@ -1122,19 +1134,33 @@ export default function App() {
           </button>
         </div>
 
-        <button
-          type="button"
-          className={pinned ? 'is-on' : ''}
-          onClick={() =>
-            setPinPage((value) => {
-              void db.setSetting(PIN_KEY, !value).catch(console.error)
-              return !value
-            })
-          }
-          title="横スクロール中もページを左端に固定する"
-        >
-          ページ固定
-        </button>
+        <div className="toolbar__group">
+          <span className="toolbar__label">固定</span>
+          <button
+            type="button"
+            className={pinSide === 'left' ? 'is-on' : ''}
+            onClick={() => choosePin('left')}
+            title="横スクロール中もページを左に置いたままにする"
+          >
+            左
+          </button>
+          <button
+            type="button"
+            className={pinSide === 'right' ? 'is-on' : ''}
+            onClick={() => choosePin('right')}
+            title="横スクロール中もページを右に置いたままにする"
+          >
+            右
+          </button>
+          <button
+            type="button"
+            className={pinSide === 'off' ? 'is-on' : ''}
+            onClick={() => choosePin('off')}
+            title="固定しない。ページもメモと一緒に流れる"
+          >
+            なし
+          </button>
+        </div>
 
         <button type="button" onClick={() => addNote(currentPage)} title="現在のページにメモを追加 (n)">
           ＋ メモ
@@ -1226,7 +1252,7 @@ export default function App() {
             pdf={active.pdf}
             pageNumber={page}
             scale={scale}
-            pinPage={pinned}
+            pin={pinned}
             notes={notesByPage.get(page) ?? EMPTY}
             highlights={highlightsByPage.get(page) ?? EMPTY}
             bookmarked={bookmarkedPages.has(page)}

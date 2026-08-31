@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import PdfPage from './PdfPage'
 import NoteCard, { type PendingQuote } from './NoteCard'
 import { laneOffset } from '../lib/lane'
+import type { PinSide } from '../App'
 import type { PDFDocument } from '../pdf'
 import type { Highlight, HighlightColor, Note, Rect } from '../types'
 
@@ -9,7 +10,8 @@ interface Props {
   pdf: PDFDocument
   pageNumber: number
   scale: number
-  pinPage: boolean
+  /** Which edge the page is held against, if any. */
+  pin: PinSide
   notes: Note[]
   highlights: Highlight[]
   bookmarked: boolean
@@ -33,7 +35,7 @@ interface Props {
 const PRERENDER_MARGIN = 1200
 
 function PageRow(props: Props) {
-  const { pdf, pageNumber, scale, pinPage, notes, highlights, bookmarked, fallbackSize, autoFocusNoteId, quoteTarget } =
+  const { pdf, pageNumber, scale, pin, notes, highlights, bookmarked, fallbackSize, autoFocusNoteId, quoteTarget } =
     props
   const rowRef = useRef<HTMLElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -98,7 +100,10 @@ function PageRow(props: Props) {
 
   return (
     <section ref={rowRef} className="row" id={`page-${pageNumber}`} data-page={pageNumber}>
-      <div ref={trackRef} className={`row__track${pinPage ? ' is-pinned' : ''}`}>
+      <div
+        ref={trackRef}
+        className={`row__track${pin === 'off' ? '' : ' is-pinned'}${pin === 'right' ? ' is-pinned-right' : ''}`}
+      >
         <div className="lane lane--pdf">
           {/* The markers float over the page's top corner rather than sitting on
               a strip below it. A strip costs every page its height, all the way
@@ -125,8 +130,10 @@ function PageRow(props: Props) {
                   </span>
                 )}
                 {notes.length > 0 && (
+                  // The arrow points at where the notes are, which is the side
+                  // the page is not held against.
                   <button type="button" className="peek" onClick={() => scrollLane(1)}>
-                    メモ {notes.length} 件 →
+                    {pin === 'right' ? `← メモ ${notes.length} 件` : `メモ ${notes.length} 件 →`}
                   </button>
                 )}
               </div>

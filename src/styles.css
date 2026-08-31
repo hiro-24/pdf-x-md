@@ -8,6 +8,9 @@
   --accent: #2f6fd0;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
   --toolbar-h: 48px;
+  /* The least a lane ever sits in from the window's edge. MIN_GUTTER in App.tsx
+     is the same number; the page's own inset grows from it. */
+  --edge-gutter: 24px;
 
   --hl-yellow: rgb(255 226 96 / 0.55);
   --hl-green: rgb(140 235 160 / 0.5);
@@ -249,6 +252,14 @@ button {
   font-size: 12px;
 }
 
+/* Names what a group of buttons is choosing between, where the buttons alone
+   would just be two kanji floating in the toolbar. */
+.toolbar__label {
+  padding: 0 4px 0 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* -------------------------------------------------------------------- pages */
 
 .pages {
@@ -274,7 +285,7 @@ button {
   /* Keep a two-finger swipe inside the lane instead of triggering browser back. */
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
-  scroll-padding-left: var(--page-gutter, 24px);
+  scroll-padding-left: var(--page-gutter, var(--edge-gutter));
 }
 
 .row__track::-webkit-scrollbar {
@@ -301,7 +312,7 @@ button {
 }
 
 .lane--pdf {
-  margin-left: var(--page-gutter, 24px);
+  margin-left: var(--page-gutter, var(--edge-gutter));
 }
 
 /* "ページ固定" (the default): the page stays put while the notes slide past it.
@@ -315,7 +326,7 @@ button {
   z-index: 3;
   margin-left: 0;
   margin-right: -20px;
-  padding: 0 20px 0 var(--page-gutter, 24px);
+  padding: 0 20px 0 var(--page-gutter, var(--edge-gutter));
   background: var(--bg);
   box-shadow: 14px 0 18px -14px rgb(0 0 0 / 0.28);
 }
@@ -323,7 +334,32 @@ button {
 /* Without this a note snaps to the scrollport's left edge, which is behind the
    pinned page - you scroll to a note and land on a card you can't see. */
 .row__track.is-pinned {
-  scroll-padding-left: var(--pdf-lane, 24px);
+  scroll-padding-left: var(--pdf-lane, var(--edge-gutter));
+}
+
+/* Held against the right edge instead. `order` moves the page past the notes
+   without touching the DOM, so the reading order stays page-then-notes; only
+   the gutters and the shadow have to be mirrored. */
+.row__track.is-pinned-right {
+  /* Safe here where it was not on the left: a right-sticky lane is bounded by
+     the content box's right edge, which this padding does not move. */
+  padding-left: var(--edge-gutter);
+  scroll-padding-left: var(--edge-gutter);
+}
+
+.row__track.is-pinned-right .lane--pdf {
+  order: 1;
+  left: auto;
+  right: 0;
+  margin-left: -20px;
+  margin-right: 0;
+  padding: 0 var(--page-gutter, var(--edge-gutter)) 0 20px;
+  box-shadow: -14px 0 18px -14px rgb(0 0 0 / 0.28);
+}
+
+/* The page follows it now, so its own trailing gutter would be a gap. */
+.row__track.is-pinned-right .lane--add {
+  margin-right: 0;
 }
 
 .lane--note {
@@ -338,7 +374,7 @@ button {
 
 .lane--add {
   width: 220px;
-  margin-right: 24px;
+  margin-right: var(--edge-gutter);
 }
 
 .lane__page {
@@ -352,6 +388,7 @@ button {
   position: absolute;
   top: 8px;
   right: 8px;
+  left: auto;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -1148,6 +1185,14 @@ button.tag:hover {
   line-height: 1.5;
   text-align: left;
   color: var(--muted);
+}
+
+/* Kept on the side the notes are on, so it points into the lane rather than off
+   the edge of the window. */
+.row__track.is-pinned-right .lane__badges {
+  left: 8px;
+  right: auto;
+  flex-direction: row-reverse;
 }
 
 .tile__notes {
