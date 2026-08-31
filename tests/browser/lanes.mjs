@@ -170,19 +170,61 @@ await page.waitForTimeout(800)
 check('the inset comes back with the width', await inset(), wide)
 
 // --- a window too narrow for both falls back rather than hiding the notes ---
-await page.setViewportSize({ width: 760, height: 1000 })
-await page.waitForTimeout(800)
+// Resizing settles over several frames (the fit-to-window pass runs first), so
+// wait for the class rather than guessing at a duration.
+const resize = async (width, expect) => {
+  await page.setViewportSize({ width, height: 1000 })
+  await page
+    .waitForFunction((want) => document.querySelector('#page-1 .row__track').classList.contains('is-pinned') === want,
+      expect, { timeout: 10000 })
+    .catch(() => {})
+}
+await resize(760, false)
 check('narrow window unpins', (await geom()).pinned, false)
-await page.setViewportSize({ width: 1600, height: 1000 })
-await page.waitForTimeout(800)
+await resize(1600, true)
 check('and pins again when there is room', (await geom()).pinned, true)
 await pin('右')
-await page.setViewportSize({ width: 760, height: 1000 })
-await page.waitForTimeout(800)
+await resize(760, false)
 check('a right-hand page unpins on a narrow window too', (await geom()).right, false)
-await page.setViewportSize({ width: 1600, height: 1000 })
-await page.waitForTimeout(800)
+await resize(1600, true)
 check('and comes back to the right, not the left', (await geom()).right, true)
+
+// --- a row with nothing beside the page still holds it against the edge ---
+// `sticky` needs something to scroll, and a page with no notes has nothing. The
+// page used to sit wherever flex put it, which was the left - on most pages,
+// since most pages have no notes. Only the page being pinned to the right made
+// that visible, because on the left flex happened to already be correct.
+await page.locator('#page-2').scrollIntoViewIfNeeded()
+await page.waitForTimeout(1000)
+const bare = () => page.evaluate(() => {
+  const row = document.getElementById('page-2')
+  const track = row.querySelector('.row__track')
+  const lane = row.querySelector('.lane--pdf').getBoundingClientRect()
+  return { notes: row.querySelectorAll('.lane--note').length,
+    scrolls: track.scrollWidth > track.clientWidth,
+    left: Math.round(lane.left), right: Math.round(lane.right), width: Math.round(track.clientWidth) }
+})
+let b = await bare()
+check('the row has no notes, so nothing to scroll', [b.notes, b.scrolls].join(','), '0,false')
+check('the bare row still holds the page on the right', b.right, b.width)
+await pin('左')
+b = await bare()
+check('and on the left when asked', b.left, 0)
+
+// The page has to be the same distance in from its edge on a row with notes and
+// on one without, or scrolling down would shuffle it about.
+const insetOf = (id) => page.evaluate((n) => {
+  const c = document.querySelector(`#page-${n} canvas`).getBoundingClientRect()
+  const w = document.querySelector(`#page-${n} .row__track`).clientWidth
+  return { left: Math.round(c.left), right: Math.round(w - c.right) }
+}, id)
+await pin('右')
+await page.waitForTimeout(600)
+check('a bare row and a noted row sit at the same inset',
+  (await insetOf(2)).right, (await insetOf(1)).right)
+await pin('左')
+await page.waitForTimeout(600)
+check('same on the left', (await insetOf(2)).left, (await insetOf(1)).left)
 
 console.log(errors.length ? `CONSOLE ERRORS:\n${errors.join('\n')}` : 'no console errors')
 await browser.close()

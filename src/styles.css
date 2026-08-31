@@ -362,6 +362,17 @@ button {
   margin-right: 0;
 }
 
+/* A row with no notes has nothing to scroll, and `sticky` does nothing without
+   scrolling - the page would simply sit where flex puts it, on the left. Most
+   pages have no notes, so that was most of the document. The auto margin eats
+   the free space and holds the page against the right edge; once the row is
+   long enough to scroll there is no free space left, the margin resolves to
+   zero, and sticky takes the job back. `.lane--pdf` is always the first child,
+   so this is the first lane that isn't the page. */
+.row__track.is-pinned-right .lane--pdf + .lane {
+  margin-left: auto;
+}
+
 .lane--note {
   width: min(560px, 82vw);
 }
