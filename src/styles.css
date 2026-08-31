@@ -340,15 +340,20 @@ button {
 /* Held against the right edge instead. `order` moves the page past the notes
    without touching the DOM, so the reading order stays page-then-notes; only
    the gutters and the shadow have to be mirrored. */
+/* The mirror image, not a half-mirror: the lane itself runs the other way, so
+   the first note is the one against the page and the rest queue up away from
+   it - the same relationship the left-hand page has, seen in a mirror. Reversing
+   the flex direction also moves the scroll origin to the right edge, so a row
+   opens showing the first note beside the page rather than the last one. */
 .row__track.is-pinned-right {
-  /* Safe here where it was not on the left: a right-sticky lane is bounded by
-     the content box's right edge, which this padding does not move. */
+  flex-direction: row-reverse;
   padding-left: var(--edge-gutter);
-  scroll-padding-left: var(--edge-gutter);
+  /* The page is at the right, so that is the edge a note has to stay clear of. */
+  scroll-padding-left: 0;
+  scroll-padding-right: var(--pdf-lane, var(--edge-gutter));
 }
 
 .row__track.is-pinned-right .lane--pdf {
-  order: 1;
   left: auto;
   right: 0;
   margin-left: -20px;
@@ -362,15 +367,12 @@ button {
   margin-right: 0;
 }
 
-/* A row with no notes has nothing to scroll, and `sticky` does nothing without
-   scrolling - the page would simply sit where flex puts it, on the left. Most
-   pages have no notes, so that was most of the document. The auto margin eats
-   the free space and holds the page against the right edge; once the row is
-   long enough to scroll there is no free space left, the margin resolves to
-   zero, and sticky takes the job back. `.lane--pdf` is always the first child,
-   so this is the first lane that isn't the page. */
-.row__track.is-pinned-right .lane--pdf + .lane {
-  margin-left: auto;
+/* `scroll-snap-align: start` means the *writing mode's* start, which is still
+   the left edge - flex-direction does not move it. Left alone, a note would
+   snap its left edge to the window's left edge, which is the far end from the
+   page. `end` puts its right edge against the page instead. */
+.row__track.is-pinned-right .lane {
+  scroll-snap-align: end;
 }
 
 .lane--note {

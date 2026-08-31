@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import PdfPage from './PdfPage'
 import NoteCard, { type PendingQuote } from './NoteCard'
-import { laneOffset } from '../lib/lane'
+import { isReversed, laneOffset } from '../lib/lane'
 import type { PinSide } from '../App'
 import type { PDFDocument } from '../pdf'
 import type { Highlight, HighlightColor, Note, Rect } from '../types'
@@ -88,14 +88,18 @@ function PageRow(props: Props) {
   const scrollLane = (direction: -1 | 1) => {
     const track = trackRef.current
     if (!track) return
-    const stops = [...track.querySelectorAll<HTMLElement>('.lane--note, .lane--add')].map((lane) =>
-      laneOffset(track, lane),
-    )
+    // Beside a right-hand page the lane runs the other way and scrollLeft counts
+    // down from zero, so measure everything along the direction of travel and
+    // the same comparison works both ways.
+    const sign = isReversed(track) ? -1 : 1
+    const here = track.scrollLeft * sign
+    const stops = [...track.querySelectorAll<HTMLElement>('.lane--note, .lane--add')]
+      .map((lane) => laneOffset(track, lane) * sign)
+      .sort((a, b) => a - b)
     const next =
-      direction > 0
-        ? stops.find((left) => left > track.scrollLeft + 1)
-        : [...stops].reverse().find((left) => left < track.scrollLeft - 1)
-    track.scrollTo({ left: next ?? (direction > 0 ? track.scrollWidth : 0), behavior: 'smooth' })
+      direction > 0 ? stops.find((stop) => stop > here + 1) : [...stops].reverse().find((stop) => stop < here - 1)
+    if (next === undefined) return
+    track.scrollTo({ left: next * sign, behavior: 'smooth' })
   }
 
   return (
