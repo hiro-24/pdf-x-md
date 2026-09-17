@@ -43,17 +43,31 @@ export function toggleLines(field: Field, mark: LineMark): Field {
   const [from, to] = lineSpan(field.value, field.start, field.end)
   const lines = field.value.slice(from, to).split('\n')
   const wanted = lines.map((_, index) => mark.make(index))
-  const already = lines.every((line, index) => line.startsWith(wanted[index]) || line.trim() === '')
+  // A blank line inside a selection is a gap between paragraphs, and stays one.
+  // But a line with nothing on it anywhere near it is not a gap - it is where
+  // the writing is about to start, which is exactly when the button gets
+  // pressed on a new note. There, the marker goes in.
+  const blank = lines.every((line) => line.trim() === '')
+  const already = !blank && lines.every((line, index) => line.startsWith(wanted[index]) || line.trim() === '')
 
   const next = lines.map((line, index) => {
     const indent = line.match(/^\s*/)?.[0] ?? ''
     const bare = line.replace(mark.match, '$1').slice(indent.length)
     if (already) return line.startsWith(wanted[index]) ? indent + line.slice(wanted[index].length) : line
-    return line.trim() === '' ? line : indent + wanted[index] + bare
+    if (line.trim() === '' && !blank) return line
+    return indent + wanted[index] + bare
   })
 
   const block = next.join('\n')
-  return { value: field.value.slice(0, from) + block + field.value.slice(to), start: from, end: from + block.length }
+  const value = field.value.slice(0, from) + block + field.value.slice(to)
+
+  // Something selected stays selected, so the next button can be pressed on the
+  // same lines. A bare caret keeps its place instead, moved along by however
+  // much its line grew: selecting the line it had just marked would mean the
+  // next keystroke wiped the marker straight off again.
+  if (field.start !== field.end) return { value, start: from, end: from + block.length }
+  const at = Math.max(from, field.start + block.length - (to - from))
+  return { value, start: at, end: at }
 }
 
 /**
