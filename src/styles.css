@@ -394,6 +394,59 @@ button {
   position: relative;
 }
 
+/* The gutter, made draggable. It is the band between the window's edge and the
+   page, where there is nothing else to do; the page itself cannot take the
+   handle because dragging on a page is how you select text. Quiet until the row
+   is under the cursor - it is an adjustment, not a control you need to see. */
+.lane__grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  width: var(--page-gutter, var(--edge-gutter));
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.row__track.is-pinned .lane__grip {
+  left: 0;
+  right: auto;
+}
+
+.row__track.is-pinned-right .lane__grip {
+  left: auto;
+  right: 0;
+}
+
+/* The line sits against the page, where the thing you are moving is. */
+.lane__grip::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.row__track.is-pinned .lane__grip::after {
+  right: 6px;
+}
+
+.row__track.is-pinned-right .lane__grip::after {
+  left: 6px;
+}
+
+.row:hover .lane__grip::after {
+  opacity: 1;
+}
+
+.lane__grip:hover::after {
+  background: var(--accent);
+}
+
 /* Over the page, not under it. Anything given its own strip is paid for by
    every page in the document; the page number in particular was already in the
    toolbar, so it cost height to repeat what was on screen anyway. */
@@ -595,6 +648,32 @@ button {
 
 .note__tools .is-danger:hover {
   color: #c2412d;
+}
+
+/* Sits between the card's bar and the text, so it reads as belonging to what
+   you are writing rather than to the card. Only while editing - in preview
+   there is nothing for it to act on. */
+.note__assist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.note__assist button {
+  min-width: 26px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.note__assist button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
 }
 
 .note__body {

@@ -12,6 +12,9 @@ interface Props {
   scale: number
   /** Which edge the page is held against, if any. */
   pin: PinSide
+  /** Grab the gutter to move the page in from its edge. */
+  onGripDown: (event: React.PointerEvent) => void
+  onGripReset: () => void
   notes: Note[]
   highlights: Highlight[]
   bookmarked: boolean
@@ -112,6 +115,17 @@ function PageRow(props: Props) {
           {/* The markers float over the page's top corner rather than sitting on
               a strip below it. A strip costs every page its height, all the way
               down the document, to say things the toolbar already says. */}
+          {pin !== 'off' && (
+            // The empty band between the window's edge and the page. There is
+            // nothing else to do there, and putting the handle on the page
+            // itself would fight with selecting text on it.
+            <div
+              className="lane__grip"
+              title="ドラッグして PDF の位置を動かす（ダブルクリックで自動に戻す）"
+              onPointerDown={props.onGripDown}
+              onDoubleClick={props.onGripReset}
+            />
+          )}
           <div className="lane__page">
             <PdfPage
               pdf={pdf}

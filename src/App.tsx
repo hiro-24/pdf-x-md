@@ -24,6 +24,8 @@ import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type Highli
 const VAULT_KEY = 'vault-dir'
 /** Which side the page stays put on while notes scroll past it. */
 const PIN_KEY = 'pin-page'
+/** A hand-set distance from the edge to the page; null means work it out. */
+const OFFSET_KEY = 'page-offset'
 /** Which way the library was last shown: the table, or the shelf of covers. */
 const VIEW_KEY = 'library-view'
 /** Below this there is no point pinning: the note would have nowhere to sit. */
@@ -164,6 +166,8 @@ export default function App() {
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>(vaultSupported ? 'off' : 'unsupported')
   const [menuOpen, setMenuOpen] = useState(false)
   const [libraryView, setLibraryView] = useState<LibraryView>('table')
+  /** How far the page sits in from its edge, once the reader has moved it. */
+  const [pageOffset, setPageOffset] = useState<number | null>(null)
   const [palette, setPalette] = useState<Tag[]>([])
   const [searchIndex, setSearchIndex] = useState<Map<string, string>>(new Map())
   const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map())
@@ -192,6 +196,44 @@ export default function App() {
   const coverQueue = useRef<Promise<unknown>>(Promise.resolve())
   /** present() runs above savePalette in the file; the ref bridges the gap. */
   const savePaletteRef = useRef<(tags: Tag[]) => Promise<void>>(async () => {})
+  const pagesRef = useRef<HTMLElement>(null)
+  /** What the grip needs to know, refreshed each render. Kept in a ref so that
+   *  dragging does not have to re-create the handler, and so a drag can move the
+   *  page by writing CSS rather than re-rendering every row on every frame. */
+  const drag = useRef({ gutter: 0, pageWidth: 0, min: 0, max: 0, toward: 1 })
+
+  /**
+   * Move the page in from its edge by hand. The worked-out distance suits most
+   * windows, but "most" is not "yours", so the gutter is draggable and what you
+   * set is remembered. A double click hands it back to the automatic figure.
+   */
+  const startOffsetDrag = useCallback((event: React.PointerEvent) => {
+    const pages = pagesRef.current
+    if (!pages || event.button !== 0) return
+    event.preventDefault()
+    const { gutter: from, pageWidth, min, max, toward } = drag.current
+    const startX = event.clientX
+    let latest = from
+
+    const move = (moved: PointerEvent) => {
+      latest = Math.round(Math.min(max, Math.max(min, from + (moved.clientX - startX) * toward)))
+      pages.style.setProperty('--page-gutter', `${latest}px`)
+      pages.style.setProperty('--pdf-lane', `${pageWidth + latest + PAGE_TRAIL}px`)
+    }
+    const drop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', drop)
+      setPageOffset(latest)
+      void db.setSetting(OFFSET_KEY, latest).catch(console.error)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', drop)
+  }, [])
+
+  const resetOffset = useCallback(() => {
+    setPageOffset(null)
+    void db.deleteSetting(OFFSET_KEY).catch(console.error)
+  }, [])
 
   const scale = fitMode === 'manual' ? ZOOM_STEPS[zoomIndex] : fitScale
 
@@ -205,6 +247,7 @@ export default function App() {
       else if (value) setPinSide(value)
     }, console.error)
     db.getSetting<LibraryView>(VIEW_KEY).then((value) => value && setLibraryView(value), console.error)
+    db.getSetting<number>(OFFSET_KEY).then((value) => typeof value === 'number' && setPageOffset(value), console.error)
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
     if (!vaultSupported) return
@@ -1061,9 +1104,12 @@ export default function App() {
   const marked = bookmarkedPages.has(currentPage)
 
   const pageWidth = Math.round(active.baseSize.width * scale)
-  const gutter = Math.round(
+  const suggested = Math.round(
     Math.min(MAX_GUTTER, Math.max(MIN_GUTTER, (viewportWidth - pageWidth - NOTE_WIDTH - MIN_GUTTER - PAGE_TRAIL) / 2)),
   )
+  // However far the reader drags it, a note still has to fit in what is left.
+  const widest = Math.max(MIN_GUTTER, viewportWidth - pageWidth - PAGE_TRAIL - MIN_NOTE_WIDTH)
+  const gutter = pageOffset == null ? suggested : Math.min(widest, Math.max(MIN_GUTTER, pageOffset))
   const pdfLane = pageWidth + gutter + PAGE_TRAIL
   // Pinning is only a kindness while a note still fits beside the page. Past
   // that it would hide the notes behind the page, which is the same complaint
@@ -1074,6 +1120,8 @@ export default function App() {
     setPinSide(side)
     void db.setSetting(PIN_KEY, side).catch(console.error)
   }
+
+  drag.current = { gutter, pageWidth, min: MIN_GUTTER, max: widest, toward: pinned === 'right' ? -1 : 1 }
 
   return (
     <div className="app">
@@ -1238,6 +1286,7 @@ export default function App() {
       </header>
 
       <main
+        ref={pagesRef}
         className="pages"
         style={{ '--pdf-lane': `${pdfLane}px`, '--page-gutter': `${gutter}px` } as CSSProperties}
       >
@@ -1248,6 +1297,8 @@ export default function App() {
             pageNumber={page}
             scale={scale}
             pin={pinned}
+            onGripDown={startOffsetDrag}
+            onGripReset={resetOffset}
             notes={notesByPage.get(page) ?? EMPTY}
             highlights={highlightsByPage.get(page) ?? EMPTY}
             bookmarked={bookmarkedPages.has(page)}
