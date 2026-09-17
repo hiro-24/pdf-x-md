@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from './Markdown'
+import {
+  BULLET, HEADING, NUMBER, QUOTE, TASK,
+  continueList, toggleLines, toggleWrap, type Field,
+} from '../lib/markdown-edit'
 import type { Note } from '../types'
 
 export interface PendingQuote {
@@ -21,6 +25,17 @@ interface Props {
 }
 
 const SAVE_DELAY = 400
+
+/** The formatting buttons, in the order they sit above the editor. */
+const ASSISTS: { label: string; title: string; run: (field: Field) => Field }[] = [
+  { label: 'H', title: '見出し', run: (f) => toggleLines(f, HEADING) },
+  { label: 'B', title: '太字', run: (f) => toggleWrap(f, '**') },
+  { label: '•', title: '箇条書き', run: (f) => toggleLines(f, BULLET) },
+  { label: '1.', title: '番号つきの箇条書き', run: (f) => toggleLines(f, NUMBER) },
+  { label: '☑', title: 'チェックボックス', run: (f) => toggleLines(f, TASK) },
+  { label: '❝', title: '引用', run: (f) => toggleLines(f, QUOTE) },
+  { label: '‹›', title: 'コード', run: (f) => toggleWrap(f, '`') },
+]
 
 export default function NoteCard({ note, index, count, autoFocus, pendingQuote, onChange, onDelete, onMove }: Props) {
   // The textarea owns the text while you type; the store catches up on a timer.
@@ -64,6 +79,20 @@ export default function NoteCard({ note, index, count, autoFocus, pendingQuote, 
     if (draft !== note.body) onChange(note.id, draft)
   }
 
+  /** Run an edit over the textarea's own text and put the caret back after. */
+  const apply = (run: (field: Field) => Field) => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const next = run({ value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd })
+    setDraft(next.value)
+    // The new text only reaches the textarea on the next render, so the
+    // selection has to wait for it.
+    requestAnimationFrame(() => {
+      textarea.focus({ preventScroll: true })
+      textarea.setSelectionRange(next.start, next.end)
+    })
+  }
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape') {
       event.currentTarget.blur()
@@ -75,6 +104,20 @@ export default function NoteCard({ note, index, count, autoFocus, pendingQuote, 
       event.preventDefault()
       flush()
       setEditing(false)
+      return
+    }
+    // Enter inside a list carries the list on, and ends it on an empty item.
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+      const textarea = event.currentTarget
+      const next = continueList({
+        value: textarea.value,
+        start: textarea.selectionStart,
+        end: textarea.selectionEnd,
+      })
+      if (!next) return
+      event.preventDefault()
+      setDraft(next.value)
+      requestAnimationFrame(() => textarea.setSelectionRange(next.start, next.end))
     }
   }
 
@@ -113,13 +156,31 @@ export default function NoteCard({ note, index, count, autoFocus, pendingQuote, 
         </div>
       </header>
 
+      {editing && (
+        <div className="note__assist">
+          {ASSISTS.map((assist) => (
+            <button
+              key={assist.label}
+              type="button"
+              title={assist.title}
+              // Keep the click from taking focus: the selection in the textarea
+              // is the thing being formatted.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => apply(assist.run)}
+            >
+              {assist.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="note__body">
         {editing ? (
           <textarea
             ref={textareaRef}
             className="note__editor"
             value={draft}
-            placeholder={'# 見出し\n\n- Markdown で書けます\n- ⌘/Ctrl+Enter でプレビュー'}
+            placeholder={'# 見出し\n\n- Markdown で書けます\n- 上のボタンか、箇条書きの続きは Enter で\n- ⌘/Ctrl+Enter でプレビュー'}
             spellCheck={false}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={flush}
