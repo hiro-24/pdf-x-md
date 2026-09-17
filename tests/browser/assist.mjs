@@ -37,6 +37,27 @@ await page.waitForSelector('#page-1 .note__editor')
 
 check('the buttons are there while editing', await page.locator('.note__assist button').count(), 7)
 
+// --- a fresh note is empty, and that is where the first button gets pressed ---
+check('the new note starts empty', await body(), '')
+await press('\u2022')
+check('a bullet starts the list on an empty note', await body(), '- ')
+await page.keyboard.type('りんご')
+await page.waitForTimeout(200)
+check('and typing carries on after it, not over it', await body(), '- りんご')
+await page.keyboard.press('Enter')
+await page.keyboard.type('みかん')
+await page.waitForTimeout(200)
+check('the list keeps going', await body(), '- りんご\n- みかん')
+
+await editor.fill('')
+await select(0, 0)
+await press('H')
+check('a heading on an empty note too', await body(), '## ')
+await editor.fill('')
+await select(0, 0)
+await press('\u2611')
+check('and a checkbox', await body(), '- [ ] ')
+
 // --- a button acts on the line the caret is on ---
 await editor.fill('買うもの')
 await select(2, 2)

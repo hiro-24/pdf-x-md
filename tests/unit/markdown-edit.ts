@@ -29,7 +29,13 @@ const show = (f: Field) =>
 
 /* ------------------------------------------------------------- line markers */
 
-check('a bullet goes on the caret line', show(toggleLines(field('買うも|の'), BULLET)), '[- 買うもの]')
+check('a bullet goes on the caret line', show(toggleLines(field('買うも|の'), BULLET)), '- 買うも|の')
+check('an empty note starts a list rather than shrugging',
+  show(toggleLines(field('|'), BULLET)), '- |')
+check('so does a fresh line under a paragraph',
+  show(toggleLines(field('あ\n|'), BULLET)), 'あ\n- |')
+check('the same for a heading on an empty note', show(toggleLines(field('|'), HEADING)), '## |')
+check('and a checkbox', show(toggleLines(field('|'), TASK)), '- [ ] |')
 check('pressing it again takes it off', show(toggleLines(field('[- 買うもの]'), BULLET)), '[買うもの]')
 check('every selected line gets one',
   show(toggleLines(field('[りんご\nみかん]'), BULLET)), '[- りんご\n- みかん]')
@@ -42,12 +48,16 @@ check('a bullet list converts rather than doubling up',
   show(toggleLines(field('[- a\n- b]'), NUMBER)), '[1. a\n2. b]')
 check('and back again', show(toggleLines(field('[1. a\n2. b]'), BULLET)), '[- a\n- b]')
 
-check('a task box', show(toggleLines(field('牛乳を買|う'), TASK)), '[- [ ] 牛乳を買う]')
-check('a quote', show(toggleLines(field('引用|文'), QUOTE)), '[> 引用文]')
-check('a heading', show(toggleLines(field('見出|し'), HEADING)), '[## 見出し]')
+check('a task box', show(toggleLines(field('牛乳を買|う'), TASK)), '- [ ] 牛乳を買|う')
+check('a quote', show(toggleLines(field('引用|文'), QUOTE)), '> 引用|文')
+check('a heading', show(toggleLines(field('見出|し'), HEADING)), '## 見出|し')
 check('a deeper heading is replaced, not stacked',
   show(toggleLines(field('[#### 見出し]'), HEADING)), '[## 見出し]')
-check('indentation is kept', show(toggleLines(field('  ネス|ト'), BULLET)), '[  - ネスト]')
+check('indentation is kept', show(toggleLines(field('  ネス|ト'), BULLET)), '  - ネス|ト')
+check('taking one off pulls the caret back with it',
+  show(toggleLines(field('- 買う|もの'), BULLET)), '買う|もの')
+check('a caret inside the marker does not fall off the line',
+  show(toggleLines(field('-| 買うもの'), BULLET)), '|買うもの')
 
 /* -------------------------------------------------------------- wrapping */
 
