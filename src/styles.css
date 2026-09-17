@@ -394,6 +394,59 @@ button {
   position: relative;
 }
 
+/* The gutter, made draggable. It is the band between the window's edge and the
+   page, where there is nothing else to do; the page itself cannot take the
+   handle because dragging on a page is how you select text. Quiet until the row
+   is under the cursor - it is an adjustment, not a control you need to see. */
+.lane__grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  width: var(--page-gutter, var(--edge-gutter));
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.row__track.is-pinned .lane__grip {
+  left: 0;
+  right: auto;
+}
+
+.row__track.is-pinned-right .lane__grip {
+  left: auto;
+  right: 0;
+}
+
+/* The line sits against the page, where the thing you are moving is. */
+.lane__grip::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.row__track.is-pinned .lane__grip::after {
+  right: 6px;
+}
+
+.row__track.is-pinned-right .lane__grip::after {
+  left: 6px;
+}
+
+.row:hover .lane__grip::after {
+  opacity: 1;
+}
+
+.lane__grip:hover::after {
+  background: var(--accent);
+}
+
 /* Over the page, not under it. Anything given its own strip is paid for by
    every page in the document; the page number in particular was already in the
    toolbar, so it cost height to repeat what was on screen anyway. */
