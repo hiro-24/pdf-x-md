@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Library from './components/Library'
 import PageRow from './components/PageRow'
 import { loadPdf, type PDFDocument } from './pdf'
@@ -182,8 +182,11 @@ export default function App() {
   const pagesInBand = useRef(new Set<number>())
   /** Page to scroll to once the rows for a freshly opened document are laid out. */
   const restoreTo = useRef<number | null>(null)
-  /** Read by the folder writer, which must not re-run on every scroll. */
+  /** Read by the folder writer, which must not re-run on every scroll, and by
+   *  the keyboard shortcuts, which must not act on the page before this one. */
   const currentPageRef = useRef(1)
+  /** The same, for the shortcut that toggles a bookmark. */
+  const bookmarksRef = useRef<Bookmark[]>([])
   /** Newest local stamp on lastPage/title/tags, kept here for the same reason. */
   const metaAtRef = useRef(0)
   const jsonInputRef = useRef<HTMLInputElement>(null)
@@ -262,9 +265,17 @@ export default function App() {
       .catch(console.error)
   }, [])
 
-  useEffect(() => {
+  // Layout effects, not passive ones. A passive effect runs after the browser
+  // has painted, so between the page number appearing in the toolbar and this
+  // line running there is a gap of a few milliseconds - and a key pressed in
+  // that gap acted on the page before it. Pressing `b` on p.30 would lift the
+  // bookmark from p.4.
+  useLayoutEffect(() => {
     currentPageRef.current = currentPage
   }, [currentPage])
+  useLayoutEffect(() => {
+    bookmarksRef.current = bookmarks
+  }, [bookmarks])
 
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
   useEffect(() => {
@@ -925,7 +936,7 @@ export default function App() {
   const toggleBookmark = useCallback(
     (page: number) => {
       if (!active) return
-      const existing = bookmarks.find((mark) => mark.page === page)
+      const existing = bookmarksRef.current.find((mark) => mark.page === page)
       if (existing) {
         setBookmarks((current) => current.filter((mark) => mark.id !== existing.id))
         db.deleteBookmark(existing.id).catch(console.error)
@@ -941,7 +952,7 @@ export default function App() {
       setBookmarks((current) => [...current, mark].sort((a, b) => a.page - b.page))
       db.putBookmark(mark).catch(console.error)
     },
-    [active, bookmarks],
+    [active],
   )
 
   const labelBookmark = useCallback((id: string, label: string) => {
@@ -1045,21 +1056,24 @@ export default function App() {
       if (target && (target.isContentEditable || /^(input|textarea|select)$/i.test(target.tagName))) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
+      // From the ref, so the key acts on the page the reader is looking at
+      // rather than the one this listener was built with.
+      const here = currentPageRef.current
       if (event.key === 'n') {
         event.preventDefault()
-        addNote(currentPage)
+        addNote(here)
       } else if (event.key === 'b') {
         event.preventDefault()
-        toggleBookmark(currentPage)
+        toggleBookmark(here)
       } else if (event.key === 'j') {
-        jumpTo(Math.min(active.doc.pageCount, currentPage + 1))
+        jumpTo(Math.min(active.doc.pageCount, here + 1))
       } else if (event.key === 'k') {
-        jumpTo(Math.max(1, currentPage - 1))
+        jumpTo(Math.max(1, here - 1))
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, currentPage, addNote, jumpTo, toggleBookmark])
+  }, [active, addNote, jumpTo, toggleBookmark])
 
   /* ----------------------------------------------------------------- render */
 

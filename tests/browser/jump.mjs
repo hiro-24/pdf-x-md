@@ -43,12 +43,20 @@ await page.waitForFunction(() => document.querySelectorAll('#page-1 .textLayer s
 // not, and the two take different paths through jumpTo.
 for (const n of [4, 30]) {
   await page.locator(`#page-${n}`).scrollIntoViewIfNeeded()
-  await page.waitForTimeout(1400)
+  // Wait for the toolbar to agree which page this is. `b` marks whatever the
+  // app calls the current page, and the scroll settles in its own time - a
+  // fixed wait guesses wrong under load and marks the page next door.
+  await page.waitForFunction((p) => document.querySelector('.toolbar__page')?.textContent.trim().startsWith(`p.${p} `),
+    n, { timeout: 20000 })
   await page.keyboard.press('b')
   await page.waitForTimeout(500)
 }
 await openPanel()
 check('both pages marked', await page.locator('.panel__marks .mark').count(), 2)
+// Named, not just counted: a mark on the wrong page would otherwise show up
+// much later as a click that waits for a chip that was never there.
+check('and on the pages they were made on',
+  (await page.locator('.panel__marks .mark__page').allInnerTexts()).join(' '), 'p.4 p.30')
 
 // --- a short hop, which glides ---
 await toTop()
