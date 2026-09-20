@@ -42,7 +42,11 @@ await page.waitForTimeout(1200)
 check('toolbar resets on an unmarked page', await isOn(), false)
 
 await page.locator('#page-4').scrollIntoViewIfNeeded()
-await page.waitForTimeout(1200)
+// The moment the toolbar says p.4 - not a beat later. `b` used to be handled
+// by a listener built one render behind the toolbar, so a key pressed in that
+// gap marked the page before this one.
+await page.waitForFunction(() => document.querySelector('.toolbar__page')?.textContent.trim().startsWith('p.4 '),
+  null, { timeout: 20000 })
 await page.keyboard.press('b')
 await page.waitForTimeout(500)
 check('keyboard b marks the page', await page.locator('#page-4 .lane__mark').count(), 1)
