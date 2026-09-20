@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import TagPicker from './TagPicker'
 import CoverPreview from './CoverPreview'
+import { converting } from '../lib/ime'
 import type { DocSummary, Tag, TagColor } from '../types'
 
 /** Long enough that running the cursor down the table doesn't render covers. */
@@ -103,6 +104,7 @@ export default function DocTable(props: Props) {
                     onChange={(event) => setDraft(event.target.value)}
                     onBlur={() => commit(doc)}
                     onKeyDown={(event) => {
+                      if (converting(event)) return
                       if (event.key === 'Enter') commit(doc)
                       if (event.key === 'Escape') setEditing(null)
                     }}

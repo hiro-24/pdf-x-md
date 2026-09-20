@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from './Markdown'
+import { converting } from '../lib/ime'
 import {
   BULLET, HEADING, NUMBER, QUOTE, TASK,
   continueList, toggleLines, toggleWrap, type Field,
@@ -94,6 +95,8 @@ export default function NoteCard({ note, index, count, autoFocus, pendingQuote, 
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // While the IME is converting, the keys belong to the conversion.
+    if (converting(event)) return
     if (event.key === 'Escape') {
       event.currentTarget.blur()
       setEditing(false)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ColorGrid from './ColorGrid'
 import { nextColor } from '../lib/palette'
+import { converting } from '../lib/ime'
 import type { Tag, TagColor } from '../types'
 
 const WIDTH = 244
@@ -50,7 +51,8 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
   // It backs out one layer at a time - the colour grid first, then the menu.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      // Escape during a conversion cancels the conversion, not the menu.
+      if (converting(event) || event.key !== 'Escape') return
       if (colorFor) setColorFor(null)
       else onClose()
     }
@@ -99,6 +101,7 @@ export default function TagPicker({ anchor, palette, applied, onToggle, onCreate
         placeholder="タグを検索、または新規作成"
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
+          if (converting(event)) return
           if (event.key === 'Enter') {
             event.preventDefault()
             if (trimmed && !exact) create()
