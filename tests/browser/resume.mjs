@@ -21,6 +21,23 @@ const stored = () => page.evaluate(() => new Promise((res) => {
     g.onsuccess = () => { res(g.result.map((d) => ({ lastPage: d.lastPage, metaAt: d.metaAt }))); r.result.close() }
   }
 }))
+/** Wait for the toolbar to say which page it is on. */
+const showing = (n) =>
+  page.waitForFunction((p) => document.querySelector('.toolbar__page')?.textContent.trim().startsWith(`p.${p} `),
+    n, { timeout: 20000 }).catch(() => {})
+/**
+ * Wait for the debounced write of the reading position to land.
+ *
+ * Looped here rather than in `waitForFunction`: a page function that returns a
+ * Promise hands back an object, and an object is truthy, so the wait succeeds
+ * on its first call without anyone looking at what the database said.
+ */
+const recorded = async (n) => {
+  for (let i = 0; i < 40; i += 1) {
+    if ((await stored())[0]?.lastPage === n) return
+    await page.waitForTimeout(250)
+  }
+}
 /** Reopen the first document, returning the resume hint as it was on arrival -
  *  it clears itself after a few seconds, so it cannot be read later on. */
 const reopen = async () => {
@@ -44,13 +61,17 @@ check('no hint on a first read', await page.locator('.resume').count(), 0)
 
 // --- deep into a long document, the case a single jump used to undershoot ---
 await page.locator('#page-31').scrollIntoViewIfNeeded()
-await page.waitForTimeout(1500)
+await showing(31)
 check('reading page 31', await cur(), 'p.31 / 40')
+// The position is written 800ms after the scrolling stops, so wait for the
+// write rather than for a guess at how long the scrolling took.
+await recorded(31)
 check('page recorded', (await stored())[0].lastPage, 31)
 check('position is stamped', (await stored())[0].metaAt > 0, 'true')
 
 const hint = await reopen()
 check(`says where it resumed ("${hint}")`, hint.includes('p.31'), 'true')
+await showing(31)
 check('resumes on page 31', await cur(), 'p.31 / 40')
 check('lands on the row, not near it', Math.abs(await offBy(31)) <= 72, 'true')
 
@@ -69,12 +90,12 @@ check('back button flushed the page', (await stored())[0].lastPage, 17)
 
 await page.locator('.doc-table__open').first().click()
 await page.waitForSelector('.toolbar', { timeout: 60000 })
-await page.waitForTimeout(1200)
+await showing(17)
 check('reopening within the session resumes', await cur(), 'p.17 / 40')
 
 // --- a reader who scrolls during the restore is not dragged back ---
 await page.locator('#page-25').scrollIntoViewIfNeeded()
-await page.waitForTimeout(1500)
+await recorded(25)
 await page.reload()
 await page.waitForSelector('.doc-table__open')
 await page.locator('.doc-table__open').first().click()
