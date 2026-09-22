@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const PDF = new URL('../fixtures/simple.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -13,7 +14,7 @@ page.on('dialog', (d) => d.accept().catch(() => {}))
 
 const classOf = (loc) => loc.getAttribute('class')
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 // Start from nothing: a palette left over from another run changes which tag is
 // first in the menu, and the auto-assigned colour along with it.
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))

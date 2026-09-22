@@ -1,5 +1,6 @@
 // The pinned page: notes scroll past it rather than pushing it off screen.
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const BIG = new URL('../fixtures/big.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -52,7 +53,7 @@ const peek = async () => {
 const inset = () => page.evaluate(() =>
   Math.round(document.querySelector('#page-1 canvas').getBoundingClientRect().left))
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.setInputFiles('input[type=file][accept*="pdf"]', BIG)

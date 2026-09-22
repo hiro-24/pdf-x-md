@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const PDF = new URL('../fixtures/simple.pdf', import.meta.url).pathname
 const BIG = new URL('../fixtures/big.pdf', import.meta.url).pathname
 let bad = 0
@@ -20,7 +21,7 @@ const load = async (file) => {
 }
 const tileFor = (title) => page.locator('.tile', { has: page.locator('.tile__title', { hasText: title }) })
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.waitForSelector('.dropzone')
