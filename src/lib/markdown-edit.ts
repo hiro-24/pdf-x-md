@@ -132,3 +132,16 @@ export function continueList(field: Field): Field | null {
     end: start + inserted.length,
   }
 }
+
+/**
+ * The first line with something on it, with its Markdown taken off - a note's
+ * name, in other words. Notes have no title field: the first line is the title,
+ * the way it is in every notebook.
+ */
+export function firstLine(body: string): string {
+  const line = body.split('\n').find((candidate) => candidate.trim() !== '') ?? ''
+  return line
+    .replace(/^\s*(#{1,6}|>|[-*+]|\d+\.)\s*/, '')
+    .replace(/[*_`]/g, '')
+    .trim()
+}

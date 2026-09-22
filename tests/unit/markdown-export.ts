@@ -12,8 +12,8 @@ const check = (label: string, actual: unknown, expected: unknown) => {
 const doc: DocSummary = {
   id: 'd1', name: '資料.pdf', size: 1, pageCount: 40, addedAt: 0, lastOpenedAt: 0, title: '読み物',
 }
-const note = (page: number, body: string): Note =>
-  ({ id: `n${page}-${body}`, docId: 'd1', page, body, order: 0, createdAt: 0, updatedAt: 0 })
+const note = (page: number, body: string, order = 0): Note =>
+  ({ id: `n${page}-${body}`, docId: 'd1', page, body, order, createdAt: 0, updatedAt: 0 })
 const high = (page: number, text: string): Highlight =>
   ({ id: `h${page}`, docId: 'd1', page, rects: [], text, color: 'yellow', createdAt: 0 })
 const mark = (page: number): Bookmark => ({ id: `b${page}`, docId: 'd1', page, label: '', createdAt: 0 })
@@ -32,6 +32,10 @@ check('the document note opens the file',
   ['# 読み物', '## まとめ', 'この本の話', '## p.3', 'みっつめ'])
 
 check('it never shows up as a page', out([note(0, 'この本の話')]), ['# 読み物', '## まとめ', 'この本の話'])
+
+check('several of them come out in tab order',
+  out([note(0, 'ふたつめ', 1), note(0, 'ひとつめ', 0)]),
+  ['# 読み物', '## まとめ', 'ひとつめ', 'ふたつめ'])
 
 check('an empty one is left out', out([note(0, '   '), note(3, 'みっつめ')]), ['# 読み物', '## p.3', 'みっつめ'])
 
