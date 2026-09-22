@@ -13,16 +13,21 @@ export function toMarkdown(
   highlights: Highlight[],
   bookmarks: Bookmark[] = [],
 ): string {
-  // Page 0 is the note for the document as a whole, and it reads as the opening
-  // of the file rather than as a page in it.
-  const docNote = notes.find((note) => note.page === 0 && note.body.trim())
+  // Page 0 holds the notes for the document as a whole. They read as the
+  // opening of the file rather than as a page in it.
+  const docNotes = notes
+    .filter((note) => note.page === 0 && note.body.trim())
+    .sort((a, b) => a.order - b.order)
   const pages = [
     ...new Set([...notes.map((n) => n.page).filter((page) => page > 0), ...highlights.map((h) => h.page)]),
   ].sort((a, b) => a - b)
 
   const out: string[] = [`# ${doc.title?.trim() || doc.name.replace(/\.pdf$/i, '')}`, '']
 
-  if (docNote) out.push('## まとめ', '', docNote.body.trim(), '')
+  if (docNotes.length) {
+    out.push('## まとめ', '')
+    for (const note of docNotes) out.push(note.body.trim(), '')
+  }
 
   if (bookmarks.length) {
     out.push('## しおり', '')

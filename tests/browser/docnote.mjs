@@ -16,6 +16,8 @@ const toggle = page.locator('.toolbar button', { hasText: 'まとめ' })
 const editor = page.locator('.doc-note .note__editor')
 const width = () => page.evaluate(() =>
   Math.round(document.querySelector('.doc-note').getBoundingClientRect().width))
+const tabs = page.locator('.doc-note__tabs button:not(.doc-note__add)')
+const named = (name) => page.locator('.doc-note__tabs button', { hasText: name })
 const open = async () => { await toggle.click(); await page.waitForSelector('.doc-note') }
 
 await page.goto('http://localhost:5173')
@@ -33,6 +35,18 @@ check('and nothing is open', await page.locator('.doc-note').count(), 0)
 await open()
 check('it opens on the side away from the page', await page.locator('.doc-note--right').count(), 1)
 check('and starts ready to write', await editor.count(), 1)
+
+// Typed, not filled: the first keystroke is what brings the note into being,
+// and rebuilding the field at that moment would take the caret with it.
+await editor.focus()
+await page.keyboard.type('# 読書')
+await page.waitForTimeout(700)
+check('the first keystrokes stay put', await editor.inputValue(), '# 読書')
+check('and the caret is still in the field',
+  await page.evaluate(() => document.activeElement?.className), 'note__editor')
+await page.keyboard.type('メモ')
+await page.waitForTimeout(300)
+check('so typing carries straight on', await editor.inputValue(), '# 読書メモ')
 
 await editor.fill('# 読書メモ\n\n- 一章は前提の話')
 await page.waitForTimeout(700)
@@ -69,6 +83,29 @@ check('opening the index closed the note, which shares its edge',
 await open()
 check('reopening brings it back', await editor.inputValue(), '# 読書メモ\n\n- 一章は前提の話\n- 二十章で結論')
 
+// --- a book is not always one thread, so there can be several ---
+check('one to start with', await tabs.count(), 1)
+check('named by its first line', (await tabs.first().innerText()).trim(), '読書メモ')
+
+await page.locator('.doc-note__add').click()
+await page.waitForTimeout(400)
+check('adding gives a second', await tabs.count(), 2)
+check('and shows it, empty', await editor.inputValue(), '')
+check('with the caret waiting in it',
+  await page.evaluate(() => document.activeElement?.className), 'note__editor')
+await editor.fill('# 人物メモ\n\n- 語り手は信用ならない')
+await page.waitForTimeout(700)
+check('which takes its own name', (await page.locator('.doc-note__tabs button.is-on').innerText()).trim(), '人物メモ')
+check('the first one is untouched', (await tabs.first().innerText()).trim(), '読書メモ')
+
+await named('読書メモ').click()
+await page.waitForTimeout(400)
+check('switching back brings its text', await editor.inputValue(),
+  '# 読書メモ\n\n- 一章は前提の話\n- 二十章で結論')
+await named('人物メモ').click()
+await page.waitForTimeout(400)
+check('and forward again, the other', await editor.inputValue(), '# 人物メモ\n\n- 語り手は信用ならない')
+
 await page.reload()
 await page.waitForSelector('.doc-table__open')
 await page.locator('.doc-table__open').first().click()
@@ -76,7 +113,24 @@ await page.waitForSelector('.toolbar', { timeout: 60000 })
 await page.waitForTimeout(1500)
 check('the mark survives a reload', (await toggle.innerText()).trim(), 'まとめ ●')
 await open()
+check('both come back', await tabs.count(), 2)
 check('and so does the text', await editor.inputValue(), '# 読書メモ\n\n- 一章は前提の話\n- 二十章で結論')
+check('in the order they were made',
+  (await tabs.allInnerTexts()).map((t) => t.trim()).join(','), '読書メモ,人物メモ')
+
+// --- throwing one away shows the one beside it ---
+await named('人物メモ').click()
+await page.waitForTimeout(400)
+await page.locator('.doc-note__head .is-danger').click()
+await page.waitForTimeout(600)
+check('the tab is gone', await tabs.count(), 1)
+check('and its neighbour is showing', await editor.inputValue(),
+  '# 読書メモ\n\n- 一章は前提の話\n- 二十章で結論')
+check('the deletion stuck', await page.evaluate(async () => {
+  const db = await new Promise((ok) => { const r = indexedDB.open('pdf-note-app'); r.onsuccess = () => ok(r.result) })
+  const rows = await new Promise((ok) => { const t = db.transaction('notes').objectStore('notes').getAll(); t.onsuccess = () => ok(t.result) })
+  return rows.filter((n) => n.page === 0).length
+}), 1)
 
 // --- m toggles it, once the writing has been stepped away from ---
 await page.keyboard.press('Escape')

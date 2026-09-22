@@ -1,7 +1,7 @@
 // The note editor's formatting buttons, as text in and text out.
 import {
   BULLET, HEADING, NUMBER, QUOTE, TASK,
-  continueList, toggleLines, toggleWrap, type Field,
+  continueList, firstLine, toggleLines, toggleWrap, type Field,
 } from '../../src/lib/markdown-edit'
 
 let bad = 0
@@ -80,6 +80,16 @@ check('an empty numbered item too', show(continueList(field('1. あ\n2. |'))!), 
 check('plain text is left to Enter', continueList(field('ただの文|')), null)
 check('a selection is left alone', continueList(field('[- あ]')), null)
 check('the caret mid-item still continues', show(continueList(field('- りん|ご'))!), '- りん\n- |ご')
+
+/* ------------------------------------------------------- the name of a note */
+
+check('a heading is the name', firstLine('# 読書メモ\n\n本文'), '読書メモ')
+check('so is a plain first line', firstLine('人物メモ\n本文'), '人物メモ')
+check('blank lines above it are skipped', firstLine('\n\n  人物メモ'), '人物メモ')
+check('a bullet is a name too', firstLine('- ひとつめ'), 'ひとつめ')
+check('a quote is as well', firstLine('> 引用から始まる'), '引用から始まる')
+check('emphasis comes off', firstLine('**大事**な話'), '大事な話')
+check('nothing written, no name', firstLine('   \n  '), '')
 
 console.log(bad ? `\n${bad} FAILED` : '\nall passed')
 process.exit(bad ? 1 : 0)

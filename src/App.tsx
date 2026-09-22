@@ -19,6 +19,7 @@ import {
 } from './lib/vault'
 import { renderCover } from './lib/thumbnail'
 import DocNote, { DEFAULT_WIDTH as DOC_NOTE_WIDTH, MIN_WIDTH as DOC_NOTE_MIN } from './components/DocNote'
+import { firstLine } from './lib/markdown-edit'
 import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
 /** Where the sync folder handle lives between sessions. */
@@ -107,15 +108,6 @@ function isTeardown(cause: unknown): boolean {
   )
 }
 
-/** First non-empty line of a note, with Markdown syntax stripped for the index. */
-function firstLine(body: string): string {
-  const line = body.split('\n').find((candidate) => candidate.trim() !== '') ?? ''
-  return line
-    .replace(/^\s*(#{1,6}|>|[-*+]|\d+\.)\s*/, '')
-    .replace(/[*_`]/g, '')
-    .trim()
-}
-
 interface Size {
   width: number
   height: number
@@ -171,6 +163,9 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [panelOpen, setPanelOpen] = useState(false)
   const [docNoteOpen, setDocNoteOpen] = useState(false)
+  /** Which whole-document note is showing. Null means the first one, or a
+   *  blank one when none has been written yet. */
+  const [docNoteId, setDocNoteId] = useState<string | null>(null)
   const [docNoteWidth, setDocNoteWidth] = useState(DOC_NOTE_WIDTH)
   const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null)
   const [quoteTarget, setQuoteTarget] = useState<{ page: number; noteId: string; quote: { text: string; nonce: number } } | null>(null)
@@ -201,9 +196,9 @@ export default function App() {
   const currentPageRef = useRef(1)
   /** The same, for the shortcut that toggles a bookmark. */
   const bookmarksRef = useRef<Bookmark[]>([])
-  /** The whole-document note, for the same reason: writing into it must not
+  /** The whole-document notes, for the same reason: writing into one must not
    *  depend on which render the keystroke happened to land in. */
-  const docNoteRef = useRef<Note | null>(null)
+  const docNotesRef = useRef<Note[]>([])
   /** Newest local stamp on lastPage/title/tags, kept here for the same reason. */
   const metaAtRef = useRef(0)
   const jsonInputRef = useRef<HTMLInputElement>(null)
@@ -286,8 +281,12 @@ export default function App() {
       .catch(console.error)
   }, [])
 
-  /** The one note that belongs to the document rather than to a page. */
-  const docNote = notes.find((note) => note.page === DOC_NOTE_PAGE) ?? null
+  /** The notes that belong to the document rather than to a page, in the order
+   *  their tabs sit in. */
+  const docNotes = useMemo(
+    () => notes.filter((note) => note.page === DOC_NOTE_PAGE).sort((a, b) => a.order - b.order),
+    [notes],
+  )
 
   // Layout effects, not passive ones. A passive effect runs after the browser
   // has painted, so between the page number appearing in the toolbar and this
@@ -301,8 +300,8 @@ export default function App() {
     bookmarksRef.current = bookmarks
   }, [bookmarks])
   useLayoutEffect(() => {
-    docNoteRef.current = docNote
-  }, [docNote])
+    docNotesRef.current = docNotes
+  }, [docNotes])
 
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
   useEffect(() => {
@@ -426,6 +425,7 @@ export default function App() {
     setRestoring(startPage > 1)
     setResumeHint(startPage > 1 ? startPage : null)
     setQuoteTarget(null)
+    setDocNoteId(null)
     setActive({ doc: effective, pdf, baseSize: { width: base.width, height: base.height } })
 
     await db.touchDoc(doc.id)
@@ -922,14 +922,15 @@ export default function App() {
   }, [])
 
   /**
-   * Write the whole-document note, making it the first time there is something
-   * to keep. Nothing is stored for a note that was opened and left empty - the
-   * library counts notes, and an empty one is not one.
+   * Write a whole-document note. With no id, this is the blank one the drawer
+   * shows before any has been written, and it gets made here - nothing is
+   * stored for a drawer that was opened and left empty, because the library
+   * counts notes and an empty one is not one.
    */
   const writeDocNote = useCallback(
-    (body: string) => {
+    (id: string | null, body: string) => {
       if (!active) return
-      const existing = docNoteRef.current
+      const existing = id ? (docNotesRef.current.find((note) => note.id === id) ?? null) : null
       if (!existing && !body.trim()) return
       const note: Note = existing
         ? { ...existing, body, updatedAt: Date.now() }
@@ -938,23 +939,55 @@ export default function App() {
             docId: active.doc.id,
             page: DOC_NOTE_PAGE,
             body,
-            order: 0,
+            order: docNotesRef.current.length,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }
       // Straight away, so a second keystroke arriving before this render lands
       // updates the note rather than making a second one.
-      docNoteRef.current = note
+      docNotesRef.current = existing
+        ? docNotesRef.current.map((n) => (n.id === note.id ? note : n))
+        : [...docNotesRef.current, note]
       setNotes((current) => (existing ? current.map((n) => (n.id === note.id ? note : n)) : [...current, note]))
       db.putNote(note).catch(console.error)
     },
     [active],
   )
 
+  /** Start another one, and show it. Asked for outright, so made outright. */
+  const addDocNote = useCallback(() => {
+    if (!active) return
+    const note: Note = {
+      id: uid(),
+      docId: active.doc.id,
+      page: DOC_NOTE_PAGE,
+      body: '',
+      order: docNotesRef.current.length,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    docNotesRef.current = [...docNotesRef.current, note]
+    setNotes((current) => [...current, note])
+    setDocNoteId(note.id)
+    db.putNote(note).catch(console.error)
+  }, [active])
+
   const deleteNote = useCallback((id: string) => {
     setNotes((current) => current.filter((note) => note.id !== id))
     db.deleteNote(id).catch(console.error)
   }, [])
+
+  /** Throw one away and show the one beside it, the way closing a tab does. */
+  const removeDocNote = useCallback(
+    (id: string) => {
+      const at = docNotesRef.current.findIndex((note) => note.id === id)
+      const rest = docNotesRef.current.filter((note) => note.id !== id)
+      docNotesRef.current = rest
+      setDocNoteId(rest[Math.max(0, at - 1)]?.id ?? null)
+      deleteNote(id)
+    },
+    [deleteNote],
+  )
 
   const moveNote = useCallback((id: string, direction: -1 | 1) => {
     setNotes((current) => {
@@ -1371,7 +1404,7 @@ export default function App() {
           }}
           title="この本全体のまとめ。どのページからでも書けます (m)"
         >
-          まとめ{docNote?.body.trim() ? ' ●' : ''}
+          まとめ{docNotes.some((note) => note.body.trim()) ? ' ●' : ''}
         </button>
 
         <button
@@ -1440,10 +1473,14 @@ export default function App() {
       {docNoteOpen && (
         <DocNote
           key={active.doc.id}
-          body={docNote?.body ?? ''}
+          notes={docNotes}
+          shownId={docNoteId}
           side={docNoteSide}
           width={docNoteWidth}
           maxWidth={Math.max(DOC_NOTE_MIN, viewportWidth - pdfLane - PAGE_TRAIL)}
+          onSelect={setDocNoteId}
+          onAdd={addDocNote}
+          onDelete={removeDocNote}
           onChange={writeDocNote}
           onResize={(width) => {
             setDocNoteWidth(width)
