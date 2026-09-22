@@ -2049,3 +2049,84 @@ tr:hover .tag-cell__add {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------- doc note */
+
+/* One note for the whole document, rather than for a page. It floats over the
+   reading area on the side away from the page, so the page it is about stays
+   visible while you write. */
+.doc-note {
+  position: fixed;
+  top: var(--toolbar-h);
+  bottom: 0;
+  z-index: 39;
+  width: min(var(--doc-note-w), 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.doc-note--right {
+  right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.doc-note--left {
+  left: 0;
+  border-right: 1px solid var(--border);
+}
+
+.doc-note__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* The inner edge is the handle, the way the page's gutter is. */
+.doc-note__grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.doc-note--right .doc-note__grip {
+  left: -6px;
+}
+
+.doc-note--left .doc-note__grip {
+  right: -6px;
+}
+
+.doc-note__grip::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  left: 4px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.doc-note__grip:hover::after {
+  opacity: 1;
+}
+
+/* Roomier than a card's: this one is written into for as long as the book
+   takes, not glanced at beside a page. */
+.doc-note .note__editor,
+.doc-note .note__preview {
+  padding: 16px 20px;
+  font-size: 13.5px;
+}

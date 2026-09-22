@@ -18,6 +18,7 @@ import {
   writePalette,
 } from './lib/vault'
 import { renderCover } from './lib/thumbnail'
+import DocNote, { DEFAULT_WIDTH as DOC_NOTE_WIDTH, MIN_WIDTH as DOC_NOTE_MIN } from './components/DocNote'
 import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
 /** Where the sync folder handle lives between sessions. */
@@ -28,6 +29,17 @@ const PIN_KEY = 'pin-page'
 const OFFSET_KEY = 'page-offset'
 /** Which way the library was last shown: the table, or the shelf of covers. */
 const VIEW_KEY = 'library-view'
+/** How wide the whole-document note was left. */
+const DOC_NOTE_KEY = 'doc-note-width'
+/**
+ * The page a whole-document note is filed under.
+ *
+ * Pages are 1-based, so 0 belongs to no page and cannot collide with one. It
+ * being a note like any other is the point: it is stored, synced, exported and
+ * searched by everything that already handles notes, and simply never appears
+ * in a page's lane, because no row is numbered 0.
+ */
+const DOC_NOTE_PAGE = 0
 /** Below this there is no point pinning: the note would have nowhere to sit. */
 const MIN_NOTE_WIDTH = 300
 /** Breathing room between the page and the first note lane. */
@@ -158,6 +170,8 @@ export default function App() {
   const [pinSide, setPinSide] = useState<PinSide>('left')
   const [currentPage, setCurrentPage] = useState(1)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [docNoteOpen, setDocNoteOpen] = useState(false)
+  const [docNoteWidth, setDocNoteWidth] = useState(DOC_NOTE_WIDTH)
   const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null)
   const [quoteTarget, setQuoteTarget] = useState<{ page: number; noteId: string; quote: { text: string; nonce: number } } | null>(null)
 
@@ -187,6 +201,9 @@ export default function App() {
   const currentPageRef = useRef(1)
   /** The same, for the shortcut that toggles a bookmark. */
   const bookmarksRef = useRef<Bookmark[]>([])
+  /** The whole-document note, for the same reason: writing into it must not
+   *  depend on which render the keystroke happened to land in. */
+  const docNoteRef = useRef<Note | null>(null)
   /** Newest local stamp on lastPage/title/tags, kept here for the same reason. */
   const metaAtRef = useRef(0)
   const jsonInputRef = useRef<HTMLInputElement>(null)
@@ -251,6 +268,10 @@ export default function App() {
     }, console.error)
     db.getSetting<LibraryView>(VIEW_KEY).then((value) => value && setLibraryView(value), console.error)
     db.getSetting<number>(OFFSET_KEY).then((value) => typeof value === 'number' && setPageOffset(value), console.error)
+    db.getSetting<number>(DOC_NOTE_KEY).then(
+      (value) => typeof value === 'number' && setDocNoteWidth(Math.max(DOC_NOTE_MIN, value)),
+      console.error,
+    )
     db.requestPersistence().then(setPersisted, () => setPersisted(false))
 
     if (!vaultSupported) return
@@ -265,6 +286,9 @@ export default function App() {
       .catch(console.error)
   }, [])
 
+  /** The one note that belongs to the document rather than to a page. */
+  const docNote = notes.find((note) => note.page === DOC_NOTE_PAGE) ?? null
+
   // Layout effects, not passive ones. A passive effect runs after the browser
   // has painted, so between the page number appearing in the toolbar and this
   // line running there is a gap of a few milliseconds - and a key pressed in
@@ -276,6 +300,9 @@ export default function App() {
   useLayoutEffect(() => {
     bookmarksRef.current = bookmarks
   }, [bookmarks])
+  useLayoutEffect(() => {
+    docNoteRef.current = docNote
+  }, [docNote])
 
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
   useEffect(() => {
@@ -894,6 +921,36 @@ export default function App() {
     })
   }, [])
 
+  /**
+   * Write the whole-document note, making it the first time there is something
+   * to keep. Nothing is stored for a note that was opened and left empty - the
+   * library counts notes, and an empty one is not one.
+   */
+  const writeDocNote = useCallback(
+    (body: string) => {
+      if (!active) return
+      const existing = docNoteRef.current
+      if (!existing && !body.trim()) return
+      const note: Note = existing
+        ? { ...existing, body, updatedAt: Date.now() }
+        : {
+            id: uid(),
+            docId: active.doc.id,
+            page: DOC_NOTE_PAGE,
+            body,
+            order: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+      // Straight away, so a second keystroke arriving before this render lands
+      // updates the note rather than making a second one.
+      docNoteRef.current = note
+      setNotes((current) => (existing ? current.map((n) => (n.id === note.id ? note : n)) : [...current, note]))
+      db.putNote(note).catch(console.error)
+    },
+    [active],
+  )
+
   const deleteNote = useCallback((id: string) => {
     setNotes((current) => current.filter((note) => note.id !== id))
     db.deleteNote(id).catch(console.error)
@@ -1065,6 +1122,9 @@ export default function App() {
       } else if (event.key === 'b') {
         event.preventDefault()
         toggleBookmark(here)
+      } else if (event.key === 'm') {
+        event.preventDefault()
+        setDocNoteOpen((value) => !value)
       } else if (event.key === 'j') {
         jumpTo(Math.min(active.doc.pageCount, here + 1))
       } else if (event.key === 'k') {
@@ -1111,9 +1171,12 @@ export default function App() {
     )
   }
 
-  const annotatedPages = [...new Set([...notes.map((n) => n.page), ...highlights.map((h) => h.page)])].sort(
-    (a, b) => a - b,
-  )
+  const annotatedPages = [
+    ...new Set([
+      ...notes.filter((n) => n.page !== DOC_NOTE_PAGE).map((n) => n.page),
+      ...highlights.map((h) => h.page),
+    ]),
+  ].sort((a, b) => a - b)
   const bookmarkedPages = new Set(bookmarks.map((mark) => mark.page))
   const marked = bookmarkedPages.has(currentPage)
 
@@ -1129,6 +1192,9 @@ export default function App() {
   // that it would hide the notes behind the page, which is the same complaint
   // from the other side, so a very narrow window gets the sliding lane back.
   const pinned: PinSide = viewportWidth - pdfLane >= MIN_NOTE_WIDTH ? pinSide : 'off'
+
+  // Away from the page, so the note and the page never fight for the same edge.
+  const docNoteSide = pinned === 'right' ? 'left' : 'right'
 
   const choosePin = (side: PinSide) => {
     setPinSide(side)
@@ -1294,7 +1360,28 @@ export default function App() {
           }}
         />
 
-        <button type="button" className={panelOpen ? 'is-on' : ''} onClick={() => setPanelOpen((value) => !value)}>
+        <button
+          type="button"
+          className={docNoteOpen ? 'is-on' : ''}
+          onClick={() => {
+            setDocNoteOpen((value) => !value)
+            // The index panel lives on the right. When the note lands there
+            // too, they would sit on top of each other.
+            if (docNoteSide === 'right') setPanelOpen(false)
+          }}
+          title="この本全体のまとめ。どのページからでも書けます (m)"
+        >
+          まとめ{docNote?.body.trim() ? ' ●' : ''}
+        </button>
+
+        <button
+          type="button"
+          className={panelOpen ? 'is-on' : ''}
+          onClick={() => {
+            setPanelOpen((value) => !value)
+            if (docNoteSide === 'right') setDocNoteOpen(false)
+          }}
+        >
           しおり・メモ ({bookmarks.length + annotatedPages.length})
         </button>
       </header>
@@ -1348,6 +1435,22 @@ export default function App() {
             先頭へ
           </button>
         </div>
+      )}
+
+      {docNoteOpen && (
+        <DocNote
+          key={active.doc.id}
+          body={docNote?.body ?? ''}
+          side={docNoteSide}
+          width={docNoteWidth}
+          maxWidth={Math.max(DOC_NOTE_MIN, viewportWidth - pdfLane - PAGE_TRAIL)}
+          onChange={writeDocNote}
+          onResize={(width) => {
+            setDocNoteWidth(width)
+            void db.setSetting(DOC_NOTE_KEY, width).catch(console.error)
+          }}
+          onClose={() => setDocNoteOpen(false)}
+        />
       )}
 
       {panelOpen && (
