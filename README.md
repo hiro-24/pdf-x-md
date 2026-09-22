@@ -20,8 +20,8 @@ Markdown メモが並ぶビューアです。
 
 ```bash
 npm install     # pdf.js の cmaps / fonts / wasm も public/ に配置されます
-npm run dev     # http://localhost:5173
-npm test        # dev を上げたまま、別のターミナルで（tests/README.md 参照）
+npm run dev     # http://localhost:5174
+npm test        # テストは自分用のサーバーを立てます（tests/README.md 参照）
 ```
 
 PDF をドロップすると読み込まれます。データが外部に送信されることはありません。
@@ -269,7 +269,7 @@ Chrome のフォルダ選択ダイアログは macOS の `~/Library` 配下を�
 
 ## テスト
 
-`npm run dev` を上げたまま `npm test`。名前を渡すと一部だけ走ります（`npm test shelf lanes`）。
+`npm test` だけで走ります。名前を渡すと一部だけ（`npm test shelf lanes`）。
 実際の Chrome を Playwright で動かすので、詳細は [tests/README.md](tests/README.md) を見てください。
 
 ## 開発の進め方
@@ -279,7 +279,7 @@ Chrome のフォルダ選択ダイアログは macOS の `~/Library` 配下を�
 ```bash
 git switch -c feat/xxx        # 作業用の枝を作る（直す時は fix/xxx）
 # ... 実装 ...
-npm test                      # dev を上げたまま、全部緑を確認
+npm test                      # 全部緑を確認
 git switch main
 git merge --no-ff feat/xxx    # main に取り込む
 git branch -d feat/xxx        # 枝を片づける
@@ -327,6 +327,16 @@ merge が毎回2回になるだけで得るものがありません。
   `getOperatorList` は 23ms ですが、CDP 経由では 4.5 秒かかり、ページが白紙のまま
   固まっているように見えます。以前これを「minified worker のバグ」と誤診しました。
   実測はページから localhost へ結果を POST させるなど、CDP を介さない方法で行ってください。
+- **ポートは固定です（5174）。**ブラウザは**ポートが違えば別のサイト**として扱います。
+  保存領域（PDF・メモ・タグ）も、同期フォルダへの許可も、**最初に開いた URL ごと**に
+  持ちます。`strictPort` を外すと、5174 が塞がっているときに Vite が黙って別の番号で
+  起動し、次に立ち上げたときには空のライブラリが出てきます——実際にそうなりました。
+  テストは 5175 に自分のサーバーを立てるので、ぶつかりません。
+  もし「ライブラリが空になった」ときは、まず**アドレスバーのポート番号**を見てください。
+- **同期フォルダが復元するのはメモだけです。**PDF 本体はフォルダに入りません
+  （`.notes.json` と `.md` だけです）。ブラウザのデータが消えた場合は、同じ PDF を
+  入れ直すとフォルダ側のメモが自動で合流します。逆に言うと、**PDF を入れ直すまでは
+  フォルダを繋いでも何も表示されません**。
 - **同期フォルダは Chrome / Edge 専用**です（`showDirectoryPicker` 非対応の Safari・
   Firefox では自動的に JSON バックアップの案内に切り替わります）。Chrome は
   セッションをまたぐとフォルダへの許可を落とすことがあり、その場合は

@@ -10,6 +10,7 @@
 // A bare textarea is measured first, as a control. Whatever the browser itself
 // does with this sequence, the app must do no more.
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const PDF = new URL('../fixtures/simple.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -59,7 +60,7 @@ page.on('dialog', (d) => d.accept().catch(() => {}))
 const { convert, settle } = ime(page, await page.context().newCDPSession(page))
 const realEnter = async () => { await page.keyboard.press('Enter'); await page.waitForTimeout(400) }
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.waitForSelector('.dropzone')

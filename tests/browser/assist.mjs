@@ -1,5 +1,6 @@
 // The note editor's formatting buttons, driven through the real textarea.
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const PDF = new URL('../fixtures/simple.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -26,7 +27,7 @@ const select = (start, end) =>
     t.setSelectionRange(a, b)
   }, [start, end])
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.setInputFiles('input[type=file][accept*="pdf"]', PDF)

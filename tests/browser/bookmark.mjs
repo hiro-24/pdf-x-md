@@ -1,5 +1,6 @@
 // Bookmarks: deliberate markers, as distinct from the implicit reading position.
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const PDF = new URL('../fixtures/simple.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -21,7 +22,7 @@ const openPanel = async () => {
   await page.waitForSelector('.panel')
 }
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.setInputFiles('input[type=file][accept*="pdf"]', PDF)

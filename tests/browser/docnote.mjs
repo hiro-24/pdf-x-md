@@ -1,5 +1,6 @@
 // One note for the whole document: written and read from any page.
 import { chromium } from 'playwright'
+import { APP } from '../app-url.mjs'
 const BIG = new URL('../fixtures/big.pdf', import.meta.url).pathname
 let bad = 0
 const check = (l, a, e) => { const ok = String(a) === String(e); if (!ok) bad += 1
@@ -20,7 +21,7 @@ const tabs = page.locator('.doc-note__tabs button:not(.doc-note__add)')
 const named = (name) => page.locator('.doc-note__tabs button', { hasText: name })
 const open = async () => { await toggle.click(); await page.waitForSelector('.doc-note') }
 
-await page.goto('http://localhost:5173')
+await page.goto(APP)
 await page.evaluate(() => indexedDB.deleteDatabase('pdf-note-app'))
 await page.reload()
 await page.setInputFiles('input[type=file][accept*="pdf"]', BIG)
