@@ -3,7 +3,7 @@ import Markdown from './Markdown'
 import { converting } from '../lib/ime'
 import {
   BULLET, HEADING, NUMBER, QUOTE, TASK,
-  continueList, toggleLines, toggleWrap, type Field,
+  continueList, shiftLines, toggleLines, toggleWrap, type Field,
 } from '../lib/markdown-edit'
 
 export interface PendingQuote {
@@ -131,6 +131,19 @@ export default function NoteEditor({
     if (event.key === 'Escape') {
       event.currentTarget.blur()
       onDone()
+      return
+    }
+    // Tab indents instead of leaving the field. Taking a key away from moving
+    // focus is only fair because there is another way out, and Escape is it.
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      const textarea = event.currentTarget
+      const next = shiftLines(
+        { value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd },
+        event.shiftKey,
+      )
+      setDraft(next.value)
+      requestAnimationFrame(() => textarea.setSelectionRange(next.start, next.end))
       return
     }
     // Cmd/Ctrl+Enter is the usual "I'm done writing" gesture.

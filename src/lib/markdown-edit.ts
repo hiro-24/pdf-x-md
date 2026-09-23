@@ -133,6 +133,51 @@ export function continueList(field: Field): Field | null {
   }
 }
 
+/** Four spaces. Tabs render at whatever width the reader's editor feels like,
+ *  and Markdown counts spaces when it decides how deep a list item sits. */
+const INDENT = '    '
+
+/**
+ * What Tab should do.
+ *
+ * On a list item it moves the whole line, because that is what Tab means in a
+ * list: put this item under the one above it. Anywhere else, with nothing
+ * selected, it is a plain indent where the caret is. With something selected it
+ * always moves every touched line, and leaves them selected so it can be
+ * pressed again.
+ *
+ * Shift+Tab is the same in reverse, taking one step of indentation off each
+ * line - four spaces, or a tab if that is what is there.
+ */
+export function shiftLines(field: Field, out: boolean): Field {
+  const { value, start, end } = field
+
+  if (!out && start === end) {
+    const at = value.lastIndexOf('\n', start - 1) + 1
+    const ends = value.indexOf('\n', start)
+    // Not a list item: Tab is four spaces where you are, not a moved line.
+    if (!ITEM.test(value.slice(at, ends === -1 ? value.length : ends))) {
+      const caret = start + INDENT.length
+      return { value: value.slice(0, start) + INDENT + value.slice(start), start: caret, end: caret }
+    }
+  }
+
+  const [from, to] = lineSpan(value, start, end)
+  const lines = value.slice(from, to).split('\n')
+  const moved = lines.map((line) => {
+    if (out) return line.replace(/^(\t| {1,4})/, '')
+    // A blank line inside a selection is a gap between paragraphs; indenting it
+    // would leave trailing spaces on an otherwise empty line.
+    return line.trim() === '' ? line : INDENT + line
+  })
+
+  const block = moved.join('\n')
+  const next = value.slice(0, from) + block + value.slice(to)
+  if (start !== end) return { value: next, start: from, end: from + block.length }
+  const caret = Math.max(from, start + block.length - (to - from))
+  return { value: next, start: caret, end: caret }
+}
+
 /**
  * The first line with something on it, with its Markdown taken off - a note's
  * name, in other words. Notes have no title field: the first line is the title,

@@ -120,6 +120,37 @@ await page.keyboard.type('ふたつ')
 await page.waitForTimeout(200)
 check('numbered lists count on', await body(), '1. ひとつ\n2. ふたつ')
 
+// --- Tab indents, and does not walk out of the field ---
+await editor.fill('')
+await editor.type('- りんご')
+await page.keyboard.press('Tab')
+await page.waitForTimeout(250)
+check('Tab nests the item', await body(), '    - りんご')
+check('and the caret is still in the field',
+  await page.evaluate(() => document.activeElement?.className), 'note__editor')
+await page.keyboard.type('\nみかん')
+await page.waitForTimeout(250)
+check('the list carries on at the same depth', await body(), '    - りんご\n    - みかん')
+await page.keyboard.press('Shift+Tab')
+await page.waitForTimeout(250)
+check('shift+Tab brings it back', await body(), '    - りんご\n- みかん')
+
+await editor.fill('ふつうの文')
+await select(5, 5)
+await page.keyboard.press('Tab')
+await page.waitForTimeout(250)
+check('outside a list it is four spaces at the caret', await body(), 'ふつうの文    ')
+
+await editor.fill('りんご\nみかん')
+await select(1, 9)
+await page.keyboard.press('Tab')
+await page.waitForTimeout(250)
+check('a selection moves every line it touches', await body(), '    りんご\n    みかん')
+check('and stays selected, so Tab can be pressed again', await page.evaluate(() => {
+  const t = document.querySelector('#page-1 .note__editor')
+  return t.value.slice(t.selectionStart, t.selectionEnd)
+}), '    りんご\n    みかん')
+
 // --- plain text is left to Enter, and shift+Enter always is ---
 await editor.fill('')
 await editor.type('ただの文')
