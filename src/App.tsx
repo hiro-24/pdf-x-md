@@ -11,6 +11,7 @@ import {
   findBundle,
   permissionState,
   pickFolder,
+  readImage,
   readPalette,
   requestAccess,
   vaultSupported,
@@ -20,6 +21,7 @@ import {
 import { renderCover } from './lib/thumbnail'
 import DocNote, { DEFAULT_WIDTH as DOC_NOTE_WIDTH, MIN_WIDTH as DOC_NOTE_MIN } from './components/DocNote'
 import { firstLine } from './lib/markdown-edit'
+import { imageName, imagesIn } from './lib/note-image'
 import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
 
 /** Where the sync folder handle lives between sessions. */
@@ -413,6 +415,20 @@ export default function App() {
     setHighlights(loadedHighlights)
     setBookmarks(loadedMarks)
 
+    // Pictures the notes mention but this browser has never held - notes
+    // adopted from the folder, or site data cleared since they were written.
+    // Fetched quietly in the background: the document opens either way, and a
+    // picture that is still coming shows as a waiting block.
+    if (vaultDir && vaultStatus === 'ready') {
+      void (async () => {
+        for (const name of [...new Set(loadedNotes.flatMap((note) => imagesIn(note.body)))]) {
+          if (await db.getImage(name)) continue
+          const blob = await readImage(vaultDir, name)
+          if (blob) await db.putImage({ id: name, docId: doc.id, blob, addedAt: Date.now() })
+        }
+      })().catch((cause) => console.error('同期フォルダから画像を読めませんでした', cause))
+    }
+
     const first = await pdf.getPage(1)
     const base = first.getViewport({ scale: 1 })
     pagesInBand.current.clear()
@@ -535,6 +551,12 @@ export default function App() {
     [present],
   )
 
+  /** What the folder asks for when it finds a picture it does not hold. */
+  const imageBytes = useCallback(
+    async (name: string) => (await db.getImage(name))?.blob ?? null,
+    [],
+  )
+
   /**
    * Write the reading position out now instead of waiting on the debounces -
    * the reader is leaving. The folder gets it too: its copy of the position is
@@ -552,6 +574,7 @@ export default function App() {
         vaultDir,
         toBundle(doc, notes, highlights, bookmarks),
         toMarkdown(doc, notes, highlights, bookmarks),
+        imageBytes,
       ).catch((cause) => console.error('同期フォルダに書けませんでした', cause))
     }
   }, [active, notes, highlights, bookmarks, vaultDir, vaultStatus])
@@ -762,6 +785,7 @@ export default function App() {
         vaultDir,
         toBundle(doc, notes, highlights, bookmarks),
         toMarkdown(doc, notes, highlights, bookmarks),
+        imageBytes,
       ).catch((cause) => {
         console.error('同期フォルダに書けませんでした', cause)
         setVaultStatus('blocked')
@@ -976,6 +1000,23 @@ export default function App() {
     setNotes((current) => current.filter((note) => note.id !== id))
     db.deleteNote(id).catch(console.error)
   }, [])
+
+  /**
+   * Keep an image a note wants, and answer with the name that will point at it.
+   *
+   * The name is the whole of the reference: the Markdown says `img:<name>`, the
+   * store is keyed by it, and the sync folder holds a file of that name. One
+   * string, so nothing has to be translated as a note travels between them.
+   */
+  const addImage = useCallback(
+    async (file: File): Promise<string | null> => {
+      if (!active) return null
+      const name = imageName(file.type)
+      await db.putImage({ id: name, docId: active.doc.id, blob: file, addedAt: Date.now() })
+      return name
+    },
+    [active],
+  )
 
   /** Throw one away and show the one beside it, the way closing a tab does. */
   const removeDocNote = useCallback(
@@ -1445,6 +1486,7 @@ export default function App() {
             onChangeNote={changeNote}
             onDeleteNote={deleteNote}
             onMoveNote={moveNote}
+            onAddImage={addImage}
             onCreateHighlight={createHighlight}
             onRecolorHighlight={recolorHighlight}
             onDeleteHighlight={removeHighlight}
@@ -1487,6 +1529,7 @@ export default function App() {
             void db.setSetting(DOC_NOTE_KEY, width).catch(console.error)
           }}
           onClose={() => setDocNoteOpen(false)}
+          onAddImage={addImage}
         />
       )}
 

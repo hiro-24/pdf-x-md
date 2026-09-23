@@ -8,7 +8,7 @@
 //
 //   node tests/run.mjs              every suite
 //   node tests/run.mjs shelf lanes  just these
-import { readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { makeFixtures } from './fixtures/make.mjs'
 import { APP, PORT } from './app-url.mjs'
@@ -25,6 +25,43 @@ const run = (command, args) =>
     child.stderr.on('data', (d) => (out += d))
     child.on('close', (code) => resolve({ code, out }))
   })
+
+const LOCK = `${root}.run.lock`
+
+/**
+ * One run at a time.
+ *
+ * A second run would find this one's server already answering and use it, and
+ * both would be deleting the database between suites - they would take turns
+ * wiping each other's fixtures and fail in ways that read like bugs in the app.
+ * A lock left behind by a run that crashed is ignored, since its pid is gone.
+ */
+function claim() {
+  if (existsSync(LOCK)) {
+    const pid = Number(readFileSync(LOCK, 'utf8'))
+    let alive = false
+    try {
+      process.kill(pid, 0)
+      alive = pid > 0
+    } catch {
+      alive = false
+    }
+    if (alive) {
+      console.error(`tests: another run is going (pid ${pid}). Two runs delete each other's data.`)
+      process.exit(1)
+    }
+  }
+  writeFileSync(LOCK, String(process.pid))
+  process.on('exit', () => {
+    try {
+      unlinkSync(LOCK)
+    } catch {
+      // Someone else's to clean up, or already gone.
+    }
+  })
+}
+
+claim()
 
 const answering = () => fetch(APP).then((r) => r.ok).catch(() => false)
 

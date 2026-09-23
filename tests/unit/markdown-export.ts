@@ -43,6 +43,17 @@ check('bookmarks still come before the pages',
   out([note(0, 'まとめ文'), note(2, 'ふたつめ')], [], [mark(2)]),
   ['# 読み物', '## まとめ', 'まとめ文', '## しおり', '- p.2', '## p.2', 'ふたつめ'])
 
+// The .md is read outside the app, where `img:` means nothing.
+check('pictures are pointed at where they sit on disk',
+  out([note(3, '![図](img:a1.png)')]),
+  ['# 読み物', '## p.3', '![図](_images/a1.png)'])
+check('in the summary too',
+  out([note(0, 'まとめ\n\n![図](img:a1.png)')]),
+  ['# 読み物', '## まとめ', 'まとめ', '![図](_images/a1.png)'])
+check('a link that is not ours is left alone',
+  out([note(3, '[参考](https://example.com/img:x)')]),
+  ['# 読み物', '## p.3', '[参考](https://example.com/img:x)'])
+
 check('highlights are quoted under their page',
   out([], [high(5, '引いた文')]),
   ['# 読み物', '## p.5', '> 引いた文'])

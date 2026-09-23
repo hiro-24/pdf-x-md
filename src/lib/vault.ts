@@ -1,4 +1,5 @@
 import { parseBundle, parsePaletteFile, type Bundle, type PaletteFile } from './bundle'
+import { imagesIn } from './note-image'
 
 /**
  * A "vault" is a folder on the real filesystem that mirrors every document's
@@ -71,12 +72,67 @@ export async function writeBundle(
   dir: FileSystemDirectoryHandle,
   bundle: Bundle,
   markdown: string,
+  /** Asked only for pictures the folder does not already hold. */
+  imageFor?: (name: string) => Promise<Blob | null>,
 ): Promise<string> {
   const name = await resolveFileName(dir, bundle)
   await writeFileText(dir, name, JSON.stringify(bundle, null, 2))
   // The .md is a courtesy copy for reading and grepping; the .json is the record.
   await writeFileText(dir, name.replace(/\.json$/, '.md'), markdown)
+  if (imageFor) await writeImages(dir, bundle.notes.flatMap((note) => imagesIn(note.body)), imageFor)
   return name
+}
+
+/* ------------------------------------------------------------------- images */
+
+/**
+ * Pictures live in one folder shared by every document, under the name the
+ * note refers to them by.
+ *
+ * Shared rather than one folder per PDF because the name is already unique, and
+ * because the same screenshot can end up quoted in notes on two different
+ * documents. The leading underscore sorts it above the notes and reads as
+ * something the app keeps rather than something you wrote.
+ */
+export const IMAGE_DIR = '_images'
+
+async function held(folder: FileSystemDirectoryHandle, name: string): Promise<boolean> {
+  try {
+    await folder.getFileHandle(name)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Write the ones that are not there yet. Written once and then left alone:
+ *  a note is saved on every pause in typing, and a screenshot is not small. */
+async function writeImages(
+  dir: FileSystemDirectoryHandle,
+  names: string[],
+  imageFor: (name: string) => Promise<Blob | null>,
+): Promise<void> {
+  const wanted = [...new Set(names)]
+  if (!wanted.length) return
+  const folder = await dir.getDirectoryHandle(IMAGE_DIR, { create: true })
+  for (const name of wanted) {
+    if (await held(folder, name)) continue
+    const blob = await imageFor(name)
+    if (!blob) continue
+    const writable = await (await folder.getFileHandle(name, { create: true })).createWritable()
+    await writable.write(blob)
+    await writable.close()
+  }
+}
+
+/** Read one back, for a browser that has the notes but not the pictures. */
+export async function readImage(dir: FileSystemDirectoryHandle, name: string): Promise<Blob | null> {
+  try {
+    const folder = await dir.getDirectoryHandle(IMAGE_DIR)
+    return await (await folder.getFileHandle(name)).getFile()
+  } catch {
+    return null
+  }
 }
 
 /**

@@ -20,6 +20,7 @@ interface Props {
   onChange: (id: string | null, body: string) => void
   onResize: (width: number) => void
   onClose: () => void
+  onAddImage: (file: File) => Promise<string | null>
 }
 
 export const MIN_WIDTH = 280
@@ -43,7 +44,7 @@ const PLACEHOLDER =
  * apart by their first line, which is the title the way it is in a notebook.
  */
 export default function DocNote({
-  notes, shownId, side, width, maxWidth, onSelect, onAdd, onDelete, onChange, onResize, onClose,
+  notes, shownId, side, width, maxWidth, onSelect, onAdd, onDelete, onChange, onResize, onClose, onAddImage,
 }: Props) {
   const [editing, setEditing] = useState(true)
   const rootRef = useRef<HTMLElement>(null)
@@ -136,6 +137,7 @@ export default function DocNote({
         onChange={(body) => onChange(shown?.id ?? null, body)}
         onDone={() => setEditing(false)}
         onEdit={() => setEditing(true)}
+        onAddImage={onAddImage}
       />
     </aside>
   )

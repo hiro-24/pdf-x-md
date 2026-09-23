@@ -8,3 +8,6 @@ tsconfig.tsbuildinfo
 # Generated on demand by tests/fixtures/make.mjs
 tests/fixtures/*.pdf
 tests/unit/.*.mjs
+
+# Held by the test runner while it is going.
+tests/.run.lock
