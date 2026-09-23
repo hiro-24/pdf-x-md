@@ -42,12 +42,19 @@ const rest = async () => {
   await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
   await page.waitForTimeout(400)
 }
-/** Playwright scrolls an element into view before clicking it, and the peek
- *  button rides on the pinned page - that scroll drags the lane back to its
- *  resting place before the click lands. A plain DOM click is what a reader's
- *  mouse actually does. */
-const peek = async () => {
-  await page.evaluate(() => document.querySelector('#page-1 .peek').click())
+/**
+ * Bring a note up against the page, using the browser's own scrolling.
+ *
+ * Nothing in the app drives this any more - the button that stepped note by
+ * note is gone - but the guarantee it relied on still has to hold: a note
+ * brought into view settles flush against the pinned page, never half behind
+ * it. That is `scroll-padding` doing the work, which is the browser's, so the
+ * browser is what drives it here. Reversed lanes snap to the other edge.
+ */
+const bring = async (index, side) => {
+  await page.evaluate(([i, inline]) => {
+    document.querySelectorAll('#page-1 .lane--note')[i].scrollIntoView({ inline, block: 'nearest', behavior: 'smooth' })
+  }, [index, side === 'right' ? 'end' : 'start'])
   await page.waitForTimeout(900)
 }
 const inset = () => page.evaluate(() =>
@@ -88,14 +95,13 @@ g = await geom()
 check('page holds its place at the far right', g.pdf.left, 0)
 check('and keeps its full width', g.pdf.width > 600, 'true')
 
-// --- the peek button lands a note clear of the page, not half behind it ---
+// --- a note brought into view lands clear of the page, not half behind it ---
 await page.evaluate(() => { document.querySelector('#page-1 .row__track').scrollLeft = 0 })
 await page.waitForTimeout(300)
-await page.locator('#page-1 .peek').click()
-await page.waitForTimeout(900)
+await bring(1, 'left')
 g = await geom()
 const landed = g.notes.filter(Boolean).find((n) => n.left >= g.pdf.right - 2 && n.right <= g.clientWidth + 2)
-check('peek lands a whole note beside the page', landed !== undefined, 'true')
+check('a whole note lands beside the page', landed !== undefined, 'true')
 // Notes are meant to slide *behind* the pinned page; what must not happen is
 // settling with a sliver of one showing beside it.
 check('the note beside the page starts flush against it', Math.abs(landed.left - g.pdf.right) <= 2, 'true')
@@ -109,16 +115,16 @@ check('the track says which edge', [g.pinned, g.right].join(','), 'true,true')
 check('the page moved to the right', g.pdf.right, g.clientWidth)
 check('the first note is the one against the page', g.notes[0].right, g.pdf.left)
 check('and the next queues up away from it', g.notes[1].right < g.notes[0].right, 'true')
-check('the arrow points at the notes', (await page.locator('#page-1 .peek').innerText()).trim(), '← メモ 3 件')
+check('no count is stamped on the page', await page.locator('#page-1 .peek').count(), 0)
 
-// Stepping forward moves away from the page, one note at a time.
-await peek()
+// Reaching further along the lane still brings each note against the page.
+await bring(1, 'right')
 g = await geom()
-check('peek brings the second note against the page', g.notes[1].right, g.pdf.left)
-check('and slides the first one behind it', g.notes[0].left >= g.pdf.left - 2, 'true')
-await peek()
+check('the second note comes against the page', g.notes[1].right, g.pdf.left)
+check('and the first slides behind it', g.notes[0].left >= g.pdf.left - 2, 'true')
+await bring(2, 'right')
 g = await geom()
-check('peeking again reaches the third', g.notes[2].right, g.pdf.left)
+check('and the third after it', g.notes[2].right, g.pdf.left)
 
 await slideAway()
 g = await geom()

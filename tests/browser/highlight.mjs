@@ -53,7 +53,8 @@ await page.locator('#page-1 .note__editor').fill('# 見出し\n\n本文')
 await page.keyboard.press('Escape')
 await page.locator('.toolbar button', { hasText: 'しおり' }).first().click()
 await page.waitForTimeout(700)
-check('both markers float over the page', await page.locator('#page-1 .lane__badges .lane__mark, #page-1 .lane__badges .peek').count(), 2)
+check('the bookmark floats over the page', await page.locator('#page-1 .lane__badges .lane__mark').count(), 1)
+check('and nothing else is stamped on it', await page.locator('#page-1 .lane__badges > *').count(), 1)
 check('the markers stay inside the page', await page.evaluate(() => {
   const b = document.querySelector('#page-1 .lane__badges').getBoundingClientRect()
   const c = document.querySelector('#page-1 canvas').getBoundingClientRect()
@@ -64,8 +65,7 @@ check('the strip does not creep back', await page.locator('#page-1 .lane__foot')
 // Text under the markers is still selectable: the row lets clicks through.
 check('the badge row is click-through', await page.evaluate(() =>
   getComputedStyle(document.querySelector('#page-1 .lane__badges')).pointerEvents), 'none')
-check('but the peek button is not', await page.evaluate(() =>
-  getComputedStyle(document.querySelector('#page-1 .peek')).pointerEvents), 'auto')
+check('the note count is not shown', await page.locator('#page-1 .peek').count(), 0)
 
 // --- and the page really is bigger than the strip allowed ---
 await page.evaluate(() => document.getElementById('page-2').scrollIntoView({ block: 'start' }))
@@ -86,7 +86,7 @@ await page.locator('.doc-table__open').first().click()
 await page.waitForSelector('.toolbar', { timeout: 60000 })
 await page.waitForTimeout(1500)
 check('highlight persisted', await page.locator('#page-1 .hl').count(), 1)
-check('markers persisted', await page.locator('#page-1 .lane__badges .peek').count(), 1)
+check('the bookmark persisted', await page.locator('#page-1 .lane__badges .lane__mark').count(), 1)
 
 console.log(errors.length ? `CONSOLE ERRORS:\n${errors.join('\n')}` : 'no console errors')
 await browser.close()

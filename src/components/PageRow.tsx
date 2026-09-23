@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import PdfPage from './PdfPage'
 import NoteCard, { type PendingQuote } from './NoteCard'
-import { isReversed, laneOffset } from '../lib/lane'
 import type { PinSide } from '../App'
 import type { PDFDocument } from '../pdf'
 import type { Highlight, HighlightColor, Note, Rect } from '../types'
@@ -82,29 +81,6 @@ function PageRow(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber])
 
-  /**
-   * Step to the next note rather than by a fixed distance. A fixed step has to
-   * guess how much of the track the reader can actually see, and beside a
-   * pinned page that guess is wrong by the width of the page - it lands you on
-   * a note that is half behind it.
-   */
-  const scrollLane = (direction: -1 | 1) => {
-    const track = trackRef.current
-    if (!track) return
-    // Beside a right-hand page the lane runs the other way and scrollLeft counts
-    // down from zero, so measure everything along the direction of travel and
-    // the same comparison works both ways.
-    const sign = isReversed(track) ? -1 : 1
-    const here = track.scrollLeft * sign
-    const stops = [...track.querySelectorAll<HTMLElement>('.lane--note, .lane--add')]
-      .map((lane) => laneOffset(track, lane) * sign)
-      .sort((a, b) => a - b)
-    const next =
-      direction > 0 ? stops.find((stop) => stop > here + 1) : [...stops].reverse().find((stop) => stop < here - 1)
-    if (next === undefined) return
-    track.scrollTo({ left: next * sign, behavior: 'smooth' })
-  }
-
   return (
     <section ref={rowRef} className="row" id={`page-${pageNumber}`} data-page={pageNumber}>
       <div
@@ -140,20 +116,11 @@ function PageRow(props: Props) {
               onDeleteHighlight={props.onDeleteHighlight}
               onQuote={props.onQuote}
             />
-            {(bookmarked || notes.length > 0) && (
+            {bookmarked && (
               <div className="lane__badges">
-                {bookmarked && (
-                  <span className="lane__mark" title="しおりを挟んだページ">
-                    🔖
-                  </span>
-                )}
-                {notes.length > 0 && (
-                  // The arrow points at where the notes are, which is the side
-                  // the page is not held against.
-                  <button type="button" className="peek" onClick={() => scrollLane(1)}>
-                    {pin === 'right' ? `← メモ ${notes.length} 件` : `メモ ${notes.length} 件 →`}
-                  </button>
-                )}
+                <span className="lane__mark" title="しおりを挟んだページ">
+                  🔖
+                </span>
               </div>
             )}
           </div>
