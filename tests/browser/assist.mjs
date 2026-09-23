@@ -36,7 +36,9 @@ await page.waitForFunction(() => document.querySelectorAll('#page-1 .textLayer s
 await page.locator('#page-1 .add-note').click()
 await page.waitForSelector('#page-1 .note__editor')
 
-check('the buttons are there while editing', await page.locator('.note__assist button').count(), 7)
+check('the buttons are there while editing', await page.locator('.note__assist button').count(), 8)
+check('seven of them shape the text, one takes a picture',
+  await page.locator('.note__assist button:not(.note__image-button)').count(), 7)
 
 // --- a fresh note is empty, and that is where the first button gets pressed ---
 check('the new note starts empty', await body(), '')

@@ -1,4 +1,12 @@
 import type { Bookmark, DocSummary, Highlight, Note } from '../types'
+import { IMAGE_PREFIX } from './note-image'
+
+/**
+ * `img:a1b2.png` means something only inside the app. This file is meant to be
+ * read anywhere - an editor, a folder on another machine - so the pictures are
+ * pointed at where they actually sit, beside it.
+ */
+const onDisk = (body: string) => body.replaceAll(`(${IMAGE_PREFIX}`, '(_images/')
 
 const quote = (text: string) =>
   text
@@ -26,7 +34,7 @@ export function toMarkdown(
 
   if (docNotes.length) {
     out.push('## まとめ', '')
-    for (const note of docNotes) out.push(note.body.trim(), '')
+    for (const note of docNotes) out.push(onDisk(note.body.trim()), '')
   }
 
   if (bookmarks.length) {
@@ -43,7 +51,7 @@ export function toMarkdown(
     }
 
     for (const note of notes.filter((n) => n.page === page).sort((a, b) => a.order - b.order)) {
-      if (note.body.trim()) out.push(note.body.trim(), '')
+      if (note.body.trim()) out.push(onDisk(note.body.trim()), '')
     }
   }
 

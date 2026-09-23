@@ -5,6 +5,7 @@ import {
   BULLET, HEADING, NUMBER, QUOTE, TASK,
   continueList, shiftLines, toggleLines, toggleWrap, type Field,
 } from '../lib/markdown-edit'
+import { insertImage, isImage } from '../lib/note-image'
 
 export interface PendingQuote {
   text: string
@@ -27,6 +28,9 @@ interface Props {
   /** Every keystroke, for a frame that needs to know before the save lands.
    *  Keep it to a ref: called this often, state would re-render per key. */
   onDraft?: (body: string) => void
+  /** Keep an image and answer with the name the Markdown should point at.
+   *  Absent where there is nowhere to keep one. */
+  onAddImage?: (file: File) => Promise<string | null>
 }
 
 const SAVE_DELAY = 400
@@ -50,10 +54,11 @@ const ASSISTS: { label: string; title: string; run: (field: Field) => Field }[] 
  * timer, so that a note on a forty page document is not a write per keystroke.
  */
 export default function NoteEditor({
-  body, editing, autoFocus, placeholder, pendingQuote, onChange, onDone, onEdit, onDraft,
+  body, editing, autoFocus, placeholder, pendingQuote, onChange, onDone, onEdit, onDraft, onAddImage,
 }: Props) {
   const [draft, setDraft] = useState(body)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   // Held in refs so the save timer does not restart every time whoever frames
   // this re-renders - scrolling the document would otherwise keep pushing the
@@ -125,6 +130,27 @@ export default function NoteEditor({
     })
   }
 
+  /** Keep the image, then write a line pointing at it where the caret is. */
+  const takeImage = async (file: File) => {
+    if (!onAddImage || !isImage(file.type)) return
+    const name = await onAddImage(file)
+    const textarea = textareaRef.current
+    if (!name || !textarea) return
+    const next = insertImage(
+      { value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd },
+      name,
+      file.name.replace(/\.[^.]+$/, ''),
+    )
+    setDraft(next.value)
+    requestAnimationFrame(() => {
+      textarea.focus({ preventScroll: true })
+      textarea.setSelectionRange(next.start, next.end)
+    })
+  }
+  /** The first image in whatever was handed over; the rest of a drop is text. */
+  const imageFrom = (files: FileList | null | undefined) =>
+    files && [...files].find((file) => isImage(file.type))
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // While the IME is converting, the keys belong to the conversion.
     if (converting(event)) return
@@ -184,6 +210,30 @@ export default function NoteEditor({
               {assist.label}
             </button>
           ))}
+          {onAddImage && (
+            <>
+              <button
+                type="button"
+                className="note__image-button"
+                title="画像を入れる（貼り付けや、放り込むのでも入ります）"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => fileRef.current?.click()}
+              >
+                🖼
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) void takeImage(file)
+                }}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -198,6 +248,27 @@ export default function NoteEditor({
             onChange={(event) => setDraft(event.target.value)}
             onBlur={flush}
             onKeyDown={handleKeyDown}
+            onPaste={(event) => {
+              const file = imageFrom(event.clipboardData.files)
+              if (!file) return
+              event.preventDefault()
+              void takeImage(file)
+            }}
+            // Without this the browser opens the dropped file instead, which
+            // throws away whatever was being written. Mid-drag only the kinds
+            // are readable - the files themselves arrive with the drop.
+            onDragOver={(event) => {
+              const carrying = [...event.dataTransfer.items].some(
+                (item) => item.kind === 'file' && isImage(item.type),
+              )
+              if (carrying) event.preventDefault()
+            }}
+            onDrop={(event) => {
+              const file = imageFrom(event.dataTransfer.files)
+              if (!file) return
+              event.preventDefault()
+              void takeImage(file)
+            }}
           />
         ) : (
           <div className="note__preview" onDoubleClick={onEdit}>

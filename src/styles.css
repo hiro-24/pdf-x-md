@@ -2157,3 +2157,36 @@ tr:hover .tag-cell__add {
 .doc-note__add {
   color: var(--accent);
 }
+
+/* Pictures inside a note. Held to the column they are in: a screenshot is
+   usually wider than the note, and a note that scrolls sideways is no longer
+   a note you can read. */
+.markdown__image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.markdown__gone {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.markdown__waiting {
+  display: block;
+  height: 60px;
+  margin: 10px 0;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.note__image-button {
+  margin-left: 4px;
+}

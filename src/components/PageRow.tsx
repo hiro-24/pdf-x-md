@@ -27,6 +27,7 @@ interface Props {
   onChangeNote: (id: string, body: string) => void
   onDeleteNote: (id: string) => void
   onMoveNote: (id: string, direction: -1 | 1) => void
+  onAddImage: (file: File) => Promise<string | null>
   onCreateHighlight: (page: number, rects: Rect[], text: string, color: HighlightColor) => void
   onRecolorHighlight: (id: string, color: HighlightColor) => void
   onDeleteHighlight: (id: string) => void
@@ -137,6 +138,7 @@ function PageRow(props: Props) {
               onChange={props.onChangeNote}
               onDelete={props.onDeleteNote}
               onMove={props.onMoveNote}
+              onAddImage={props.onAddImage}
             />
           </div>
         ))}

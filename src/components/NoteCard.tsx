@@ -14,12 +14,15 @@ interface Props {
   onChange: (id: string, body: string) => void
   onDelete: (id: string) => void
   onMove: (id: string, direction: -1 | 1) => void
+  onAddImage: (file: File) => Promise<string | null>
 }
 
 const PLACEHOLDER = '# 見出し\n\n- Markdown で書けます\n- 上のボタンか、箇条書きの続きは Enter で\n- ⌘/Ctrl+Enter でプレビュー'
 
 /** One note on one page: the writing surface, with its place in the row. */
-export default function NoteCard({ note, index, count, autoFocus, pendingQuote, onChange, onDelete, onMove }: Props) {
+export default function NoteCard({
+  note, index, count, autoFocus, pendingQuote, onChange, onDelete, onMove, onAddImage,
+}: Props) {
   const [editing, setEditing] = useState(autoFocus || note.body.trim() === '')
   /** What is in the field right now, which the saved copy lags by a moment.
    *  Deleting asks the reader first, and it has to ask about what they see. */
@@ -64,6 +67,7 @@ export default function NoteCard({ note, index, count, autoFocus, pendingQuote, 
         onDone={() => setEditing(false)}
         onEdit={() => setEditing(true)}
         onDraft={(body) => (draft.current = body)}
+        onAddImage={onAddImage}
       />
     </article>
   )

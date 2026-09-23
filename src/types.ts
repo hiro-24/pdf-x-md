@@ -94,6 +94,21 @@ export interface Bookmark {
   createdAt: number
 }
 
+/**
+ * An image pasted or dropped into a note.
+ *
+ * The id doubles as a filename - "a1b2c3d4.png" - so the same string names it
+ * in the Markdown (`![](img:a1b2c3d4.png)`), in this store, and in the sync
+ * folder. One name everywhere means nothing has to be translated when a note
+ * travels between them.
+ */
+export interface NoteImage {
+  id: string
+  docId: string
+  blob: Blob
+  addedAt: number
+}
+
 export interface DocBundle {
   doc: DocSummary
   notes: Note[]
