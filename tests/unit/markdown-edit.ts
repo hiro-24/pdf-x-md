@@ -1,7 +1,7 @@
 // The note editor's formatting buttons, as text in and text out.
 import {
   BULLET, HEADING, NUMBER, QUOTE, TASK,
-  continueList, firstLine, toggleLines, toggleWrap, type Field,
+  continueList, firstLine, shiftLines, toggleLines, toggleWrap, type Field,
 } from '../../src/lib/markdown-edit'
 
 let bad = 0
@@ -80,6 +80,33 @@ check('an empty numbered item too', show(continueList(field('1. あ\n2. |'))!), 
 check('plain text is left to Enter', continueList(field('ただの文|')), null)
 check('a selection is left alone', continueList(field('[- あ]')), null)
 check('the caret mid-item still continues', show(continueList(field('- りん|ご'))!), '- りん\n- |ご')
+
+/* --------------------------------------------------------------- indenting */
+
+const tab = (marked: string) => show(shiftLines(field(marked), false))
+const untab = (marked: string) => show(shiftLines(field(marked), true))
+
+check('plain text takes four spaces where the caret is', tab('ふつう|の文'), 'ふつう    |の文')
+check('at the start of a line that is an indent', tab('|ふつうの文'), '    |ふつうの文')
+
+// On a list item Tab means "nest this", wherever the caret happens to sit.
+check('a list item moves as a whole line', tab('- りん|ご'), '    - りん|ご')
+check('a numbered one too', tab('1. ひと|つ'), '    1. ひと|つ')
+check('a checkbox as well', tab('- [ ] やる|こと'), '    - [ ] やる|こと')
+check('one already nested goes deeper', tab('    - りんご|'), '        - りんご|')
+
+check('shift+tab takes it back', untab('    - りん|ご'), '- りん|ご')
+check('it also takes a tab character', untab('\t- りん|ご'), '- りん|ご')
+check('a short indent goes all the way', untab('  - りん|ご'), '- りん|ご')
+check('nothing to take off, nothing happens', untab('- りん|ご'), '- りん|ご')
+check('the caret does not fall off the line', untab('  |- りんご'), '|- りんご')
+
+// A selection always moves lines, list or not, and stays selected so it can be
+// pressed again.
+check('every selected line moves', tab('[りんご\nみかん]'), '[    りんご\n    みかん]')
+check('and moves back', untab('[    りんご\n    みかん]'), '[りんご\nみかん]')
+check('a half-touched line counts', tab('りん[ご\nみか]ん'), '[    りんご\n    みかん]')
+check('blank lines are left alone', tab('[りんご\n\nみかん]'), '[    りんご\n\n    みかん]')
 
 /* ------------------------------------------------------- the name of a note */
 
