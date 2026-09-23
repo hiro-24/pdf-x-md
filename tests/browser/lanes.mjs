@@ -55,7 +55,18 @@ const bring = async (index, side) => {
   await page.evaluate(([i, inline]) => {
     document.querySelectorAll('#page-1 .lane--note')[i].scrollIntoView({ inline, block: 'nearest', behavior: 'smooth' })
   }, [index, side === 'right' ? 'end' : 'start'])
-  await page.waitForTimeout(900)
+  await stopped()
+}
+/** Smooth scrolling takes as long as it takes, and snapping happens after it.
+ *  Two readings the same is the lane having finished with both. */
+const stopped = async () => {
+  let last = null
+  for (let i = 0; i < 40; i += 1) {
+    const now = await page.evaluate(() => Math.round(document.querySelector('#page-1 .row__track').scrollLeft))
+    if (now === last) return
+    last = now
+    await page.waitForTimeout(150)
+  }
 }
 const inset = () => page.evaluate(() =>
   Math.round(document.querySelector('#page-1 canvas').getBoundingClientRect().left))
