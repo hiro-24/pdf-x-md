@@ -1,4 +1,4 @@
-# PDF Note
+# PDF x Markdown Note
 
 PDF を縦にスクロールして読み、メモを付けたいページでは **横にスクロール**すると、そのページ専用の
 Markdown メモが並ぶビューアです。
