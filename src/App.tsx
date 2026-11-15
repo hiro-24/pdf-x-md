@@ -20,6 +20,7 @@ import {
 } from './lib/vault'
 import { renderCover } from './lib/thumbnail'
 import DocNote, { DEFAULT_WIDTH as DOC_NOTE_WIDTH, MIN_WIDTH as DOC_NOTE_MIN } from './components/DocNote'
+import ResumeHint from './components/ResumeHint'
 import { firstLine } from './lib/markdown-edit'
 import { imageName, imagesIn } from './lib/note-image'
 import { TAG_COLORS, type Bookmark, type DocSummary, type Highlight, type HighlightColor, type Note, type Rect, type Tag, type TagColor } from './types'
@@ -865,11 +866,7 @@ export default function App() {
     })
   }, [active, syncCurrentPage])
 
-  useEffect(() => {
-    if (resumeHint == null) return
-    const timer = setTimeout(() => setResumeHint(null), 5000)
-    return () => clearTimeout(timer)
-  }, [resumeHint])
+  const dismissResumeHint = useCallback(() => setResumeHint(null), [])
 
   // Remember the page, but not the pages that flick past during the restore.
   useEffect(() => {
@@ -1496,20 +1493,17 @@ export default function App() {
       </main>
 
       {resumeHint != null && (
-        <div className="resume" role="status">
-          <span>
-            前回の続き <strong>p.{resumeHint}</strong> から開きました
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setResumeHint(null)
-              jumpTo(1)
-            }}
-          >
-            先頭へ
-          </button>
-        </div>
+        <ResumeHint
+          // Prefixed: DocNote is a sibling keyed by the same id, and siblings
+          // sharing a key is an error the moment both are up.
+          key={`resume:${active.doc.id}`}
+          page={resumeHint}
+          onGone={dismissResumeHint}
+          onTop={() => {
+            setResumeHint(null)
+            jumpTo(1)
+          }}
+        />
       )}
 
       {docNoteOpen && (

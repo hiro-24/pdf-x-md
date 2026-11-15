@@ -1981,7 +1981,8 @@ tr:hover .tag-cell__add {
 /* --------------------------------------------------- resume announcement */
 
 /* Sits above the pages so the jump reads as deliberate rather than as the
-   viewer losing its place. Fades itself out after a few seconds. */
+   viewer losing its place. Fades itself out after a few seconds (HINT_MS in
+   ResumeHint.tsx - the fade's 4.5s delay plus 500ms is that number). */
 .resume {
   position: fixed;
   left: 50%;
@@ -2018,6 +2019,13 @@ tr:hover .tag-cell__add {
 .resume button:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Held while pointed at or focused - ResumeHint pauses its countdown to match,
+   so the fade and the removal still land together. */
+.resume:hover,
+.resume:focus-within {
+  animation-play-state: paused;
 }
 
 @keyframes resume-in {
