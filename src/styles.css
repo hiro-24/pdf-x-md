@@ -17,6 +17,17 @@
   --hl-blue: rgb(140 200 255 / 0.5);
   --hl-pink: rgb(255 160 200 / 0.5);
 
+  /* Code in notes. Comments take --muted, so they recede the way the rest of
+     the app's secondary text does. */
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-title: #8250df;
+  --code-type: #953800;
+  --code-tag: #116329;
+  --code-deletion: #82071e;
+  --math-error: #c2412d;
+
   color-scheme: light dark;
 }
 
@@ -30,6 +41,15 @@
     --muted: #9b9b95;
     --accent: #6ea8fe;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+
+    --code-keyword: #ff7b72;
+    --code-string: #a5d6ff;
+    --code-number: #79c0ff;
+    --code-title: #d2a8ff;
+    --code-type: #ffa657;
+    --code-tag: #7ee787;
+    --code-deletion: #ffa198;
+    --math-error: #ff8f7a;
   }
 }
 
@@ -783,6 +803,95 @@ button {
   padding: 0;
   border: none;
   background: none;
+}
+
+/* Token colours for rehype-highlight. Its class names are highlight.js's; only
+   the ones that carry meaning get a colour, the rest stay in the text colour. */
+.markdown .hljs-comment,
+.markdown .hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.markdown .hljs-keyword,
+.markdown .hljs-selector-tag,
+.markdown .hljs-meta,
+.markdown .hljs-doctag {
+  color: var(--code-keyword);
+}
+
+.markdown .hljs-string,
+.markdown .hljs-regexp,
+.markdown .hljs-selector-attr,
+.markdown .hljs-selector-pseudo {
+  color: var(--code-string);
+}
+
+.markdown .hljs-number,
+.markdown .hljs-literal,
+.markdown .hljs-symbol,
+.markdown .hljs-bullet,
+.markdown .hljs-attr,
+.markdown .hljs-attribute,
+.markdown .hljs-variable,
+.markdown .hljs-template-variable,
+.markdown .hljs-property,
+.markdown .hljs-selector-id,
+.markdown .hljs-selector-class {
+  color: var(--code-number);
+}
+
+.markdown .hljs-title,
+.markdown .hljs-section {
+  color: var(--code-title);
+}
+
+.markdown .hljs-type,
+.markdown .hljs-built_in {
+  color: var(--code-type);
+}
+
+.markdown .hljs-name,
+.markdown .hljs-tag,
+.markdown .hljs-addition {
+  color: var(--code-tag);
+}
+
+.markdown .hljs-deletion {
+  color: var(--code-deletion);
+}
+
+.markdown .hljs-addition,
+.markdown .hljs-deletion {
+  display: inline-block;
+  width: 100%;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.markdown .hljs-section,
+.markdown .hljs-strong {
+  font-weight: 600;
+}
+
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+
+/* A note is as narrow as a lane, so a long equation scrolls inside itself
+   rather than pushing the card wider. The padding keeps tall parts - a big
+   integral, a fraction of fractions - clear of the hidden vertical overflow. */
+.markdown .katex-display {
+  margin: 0.8em 0;
+  padding: 0.25em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* KaTeX writes its own red inline; this one is legible in both themes. The
+   source stays as typed, and hovering it shows what KaTeX objected to. */
+.markdown .katex-error {
+  color: var(--math-error) !important;
+  cursor: help;
 }
 
 .markdown blockquote {
