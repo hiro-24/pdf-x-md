@@ -39,16 +39,55 @@ const recorded = async (n) => {
     await page.waitForTimeout(250)
   }
 }
-/** Reopen the first document, returning the resume hint as it was on arrival -
- *  it clears itself after a few seconds, so it cannot be read later on. */
-const reopen = async () => {
+/** The hint's lifetime, from ResumeHint.tsx. */
+const HINT_MS = 5000
+/** Let the hint's own time run out, counted from when it was seen. The hint went
+ *  up no later than that, so past this it would have gone had nothing held it. */
+const outlast = async (seenAt) => page.waitForTimeout(Math.max(0, seenAt + HINT_MS + 500 - Date.now()))
+/**
+ * A point inside the resume hint, worked out before it exists: it sits centred,
+ * `bottom` px above the window's edge. Read from the stylesheet so this follows
+ * the CSS rather than repeating it.
+ */
+const hintSpot = async () => {
+  const bottom = await page.evaluate(() => {
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) if (rule.selectorText === '.resume') return parseFloat(rule.style.bottom)
+      } catch {
+        // A sheet from another origin keeps its rules to itself.
+      }
+    }
+    return NaN
+  })
+  const { width, height } = page.viewportSize()
+  return { x: width / 2, y: height - bottom - 8 }
+}
+/**
+ * Open the first document from the library with the pointer resting where the
+ * resume hint will come up, so the hint holds still for as long as the test
+ * needs it.
+ *
+ * Under CDP, pdf.js can hold the main thread for most of the five seconds the
+ * hint is up. Checking the landing first and clicking 先頭へ second used to
+ * race the fade and lose about one run in two; even hover() after the hint
+ * appeared took up to 4.2s to land, since it waits for frames that pdf.js is
+ * holding up. A pointer that is already there costs no round trip at all.
+ */
+const openHeld = async (spot) => {
+  await page.locator('.doc-table__open').first().click()
+  await page.mouse.move(spot.x, spot.y)
+  await page.waitForSelector('.resume', { timeout: 60000 })
+  return Date.now()
+}
+/** Reopen after a reload, returning the hint's text and when it was seen. */
+const reopen = async (spot) => {
   await page.reload()
   await page.waitForSelector('.doc-table__open')
-  await page.locator('.doc-table__open').first().click()
-  await page.waitForSelector('.toolbar', { timeout: 60000 })
-  const hint = await page.locator('.resume').innerText({ timeout: 2000 }).catch(() => '')
+  const seenAt = await openHeld(spot)
+  const text = await page.locator('.resume').innerText({ timeout: 20000 }).catch(() => '')
   await page.waitForTimeout(1200)
-  return hint.replace(/\s+/g, ' ')
+  return { text: text.replace(/\s+/g, ' '), seenAt }
 }
 
 await page.goto(APP)
@@ -70,13 +109,18 @@ await recorded(31)
 check('page recorded', (await stored())[0].lastPage, 31)
 check('position is stamped', (await stored())[0].metaAt > 0, 'true')
 
-const hint = await reopen()
+const spot = await hintSpot()
+const { text: hint, seenAt } = await reopen(spot)
 check(`says where it resumed ("${hint}")`, hint.includes('p.31'), 'true')
 await showing(31)
 check('resumes on page 31', await cur(), 'p.31 / 40')
 check('lands on the row, not near it', Math.abs(await offBy(31)) <= 72, 'true')
 
-// --- the hint gets out of the way, and offers a way back ---
+// --- the hint waits while the pointer is on it ---
+await outlast(seenAt)
+check('the hint stays while the pointer is on it', await page.locator('.resume').count(), 1)
+
+// --- and offers a way back ---
 await page.locator('.resume button').click()
 await page.waitForTimeout(900)
 check('先頭へ goes to page 1', await cur(), 'p.1 / 40')
@@ -105,13 +149,25 @@ await page.mouse.wheel(0, 400)
 await page.waitForTimeout(1500)
 check('a scroll during the restore wins', (await cur()) !== 'p.25 / 40' || Math.abs(await offBy(25)) > 0, 'true')
 
-// --- the hint disappears on its own ---
+// --- left alone, the hint disappears on its own ---
+// The pointer is still where it clicked the table, well clear of the hint.
+await page.waitForSelector('.resume', { state: 'detached', timeout: HINT_MS + 10000 }).catch(() => {})
+check('hint clears itself', await page.locator('.resume').count(), 0)
+
+// --- held, it waits; let go, and it goes ---
 await page.locator('.toolbar__back').click()
 await page.waitForSelector('.doc-table')
-await page.locator('.doc-table__open').first().click()
-await page.waitForSelector('.resume', { timeout: 60000 })
-await page.waitForTimeout(6000)
-check('hint clears itself', await page.locator('.resume').count(), 0)
+await outlast(await openHeld(spot))
+check('a pointed-at hint outlasts its five seconds', await page.locator('.resume').count(), 1)
+// The summary is the hint's sibling in the viewer. Opening it while the hint is
+// up once gave the two the same React key - an error on the console, which
+// fails this suite. Holding the hint makes that moment certain to happen here.
+await page.keyboard.press('m')
+await page.waitForSelector('.doc-note')
+check('the summary opens with the hint still up', await page.locator('.resume').count(), 1)
+await page.mouse.move(40, 500)
+await page.waitForSelector('.resume', { state: 'detached', timeout: HINT_MS + 10000 }).catch(() => {})
+check('once the pointer leaves, it goes', await page.locator('.resume').count(), 0)
 
 console.log(errors.length ? `CONSOLE ERRORS:\n${errors.join('\n')}` : 'no console errors')
 await browser.close()
